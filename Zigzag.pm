@@ -1,8 +1,8 @@
-# Xanadu(R) ZigZag(tm) Hyperstructure Kit, $Revision: 0.66 $
+# Xanadu(R) Zigzag(tm) Hyperstructure Kit, $Revision: 0.67 $
 #
 # Designed by Ted Nelson
 # Programmed by Andrew Pam ("xanni") and Bek Oberin ("gossamer")
-# Copyright (c) 1997, 1998 Project Xanadu
+# Copyright (c) 1997-1999 Project Xanadu
 #
 # This is only a partial implementation, with only a few structure and view
 # operations; however, they are enough to allow you to create, view and explore
@@ -20,18 +20,23 @@
 #
 # For more information, visit http://www.xanadu.net/zz/
 #
-# This file "ZigZag.pm" contains the implementation of the ZigZag data
+# This file "Zigzag.pm" contains the implementation of the Zigzag data
 # structures and operations.  User interfaces for interactive manipulation of
-# the ZigZag data structures can be created using the operations defined in
+# the Zigzag data structures can be created using the operations defined in
 # this file.  Example interfaces include "zigzag" (a text-based interface using
-# Curses) and "zizzle" (a web-based interface using HTML and HTTP).
+# Curses) and "zizl" (a web-based interface using HTML and HTTP).
 #
 # ===================== Change Log
 #
-# Inital ZigZag implementation
-# $Id: Zigzag.pm,v 0.66 1999/01/07 07:15:30 xanni Exp $
+# Inital Zigzag implementation
+# $Id: Zigzag.pm,v 0.67 1999/03/13 05:01:31 xanni Exp $
 #
 # $Log: Zigzag.pm,v $
+# Revision 0.67  1999/03/13 05:01:31  xanni
+# Minor naming fixes, moved cell_create() to front-end
+# Made recycle pile a circular queue, reused oldest cell first
+# Implemented db_upgrade(), dimension_exists() and cell_new()
+#
 # Revision 0.66  1999/01/07 07:15:30  xanni
 # Minor fixes to db_open()
 # Replaced window_draw_* functions with new layout_* functions
@@ -60,7 +65,7 @@
 # Older revisions are listed in the CHANGES file
 #
 
-package ZigZag;
+package Zigzag;
 use Exporter;
 @ISA = qw(Exporter);
 @EXPORT = qw
@@ -90,9 +95,9 @@ use Exporter;
     get_contained
     get_links_to
     do_shear
-    cell_create
     cell_insert
     cell_excise
+    cell_new
     cursor_move_dimension
     cursor_jump
     cursor_move_direction
@@ -131,8 +136,6 @@ use File::Copy;
 *display_dirty = *::display_dirty;
 *display_status_draw = *::display_status_draw;
 *user_error = *::user_error;
-*atcursor_edit = *::atcursor_edit;
-*input_get_direction = *::input_get_direction;
 
 # Note: We are using the following coding conventions:
 # Constants are named in ALLCAPS
@@ -145,8 +148,8 @@ use File::Copy;
 
 # Define constants
 use vars qw($VERSION);
-#($VERSION) = q$Revision: 0.66 $ =~ /([\d\.]+)/;
-$VERSION = do { my @r = (q$Revision: 0.66 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r }; # must be all one line, for MakeMaker
+#($VERSION) = q$Revision: 0.67 $ =~ /([\d\.]+)/;
+$VERSION = do { my @r = (q$Revision: 0.67 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r }; # must be all one line, for MakeMaker
 my $FALSE = 0;
 my $TRUE = !$FALSE;
 my $CURSOR_HOME = 10;            # NOTE!  This assumes it stays fixed!
@@ -160,7 +163,7 @@ my $BACKUP_FILE_SUFFIX = ".bak";
 # Declare globals
 use vars qw(%ZZ $Command_Count $Hcells $Vcells $Input_Buffer);
 
-#my %ZZ;                          # The ZigZag cells and links
+#my %ZZ;                          # The Zigzag cells and links
 #my $Input_Buffer;                # Cell number entered from the keyboard
 #my $Command_Count;               # Counts commands between DB syncs
 my $DB_Ref;                      # We use this for sync'ing.
@@ -205,7 +208,7 @@ sub initial_geometry()
       "10+d.1" =>	1,
       "10+d.2" =>	11,
       "10-d.1" =>	21,
-   11 =>        "Action",
+   11 =>        "Menu",
       "11+d.1" =>	12,
       "11-d.2" =>	10,
       "11+d.2" =>	16,
@@ -222,7 +225,7 @@ sub initial_geometry()
       "14+d.1" =>	15,
    15 =>        "I",
       "15-d.1" =>	14,
-   16 =>        "Data",
+   16 =>        "Event",
       "16+d.1" =>	17,
       "16-d.2" =>	11,
       "16-d.cursor" =>	11,
@@ -357,8 +360,32 @@ sub initial_geometry()
    99 =>        "Recycle pile",
       "99-d.1" =>	1,
       "99+d.1" =>	0,
+      "99-d.2" =>	99,
+      "99+d.2" =>	99,
    "n" =>        100
    );
+}
+
+sub db_upgrade()
+# Perform any upgrades necessary to maintain backward compatibility
+# with old data files
+{
+  # Earlier than v0.50 not presently supported due to
+  # massive dimension renaming
+  die "Sorry, this data file predates Zigzag v0.50.\n"
+    unless dimension_exists("d.cursor") and dimension_exists("d.clone");
+
+  # Make sure $SELECT_HOME exists (from v0.57)
+  if (not defined $ZZ{$SELECT_HOME})
+  {
+    $ZZ{$SELECT_HOME} = "Selection";
+    link_make($SELECT_HOME, $SELECT_HOME, "+d.2");
+    link_make($CURSOR_HOME, $SELECT_HOME, "-d.1");
+  }
+
+  # Make sure recycle pile is a circular queue (from v0.67)
+  link_make($DELETE_HOME, get_lastcell($DELETE_HOME, "+d.2"), "-d.2")
+    unless defined $ZZ{"$DELETE_HOME-d.2"};
 }
 
 sub db_open(;$)
@@ -374,6 +401,7 @@ sub db_open(;$)
       || die "Can't copy data file \"$Filename\": $!\n";
     $DB_Ref = tie %ZZ, 'DB_File', $Filename, O_RDWR
       || die "Can't open data file \"$Filename\": $!\n";
+    db_upgrade();
   }
   else
   {
@@ -437,7 +465,7 @@ sub is_clone($)
 sub is_selected($)
 {
   my $cell = shift;
-  my $headcell = get_lastcell($cell, '-d.mark');
+  my $headcell = get_lastcell($cell, "-d.mark");
   return $headcell != $cell
     && defined get_distance($headcell, "+d.2", $SELECT_HOME);
 }
@@ -445,7 +473,7 @@ sub is_selected($)
 sub is_active_selected($)
 {
   my $cell = shift;
-  my $headcell = get_lastcell($cell, '-d.mark');
+  my $headcell = get_lastcell($cell, "-d.mark");
   return $headcell == $SELECT_HOME && $headcell != $cell;
 }
 
@@ -462,8 +490,18 @@ sub dimension_is_essential($)
 sub dimension_exists($)
 {
   my $dim = shift;
-  # XXX todo
-  return $TRUE;
+  my $dhome = $ZZ{"$CURSOR_HOME+d.1"};
+  my $cell = $dhome;
+  my $found = $FALSE;
+
+  # Follow links until we find a match or return to where we started
+  do
+  {
+    $cell = $ZZ{"$cell+d.2"};
+    die "Dimension list broken" unless defined $cell;
+    $found = $ZZ{$cell} =~ /^$dim$/;
+  } until $found or ($cell == $dhome);
+  return $found;
 }
 
 
@@ -787,18 +825,15 @@ sub link_break($$;$)
 {
   my ($cell1, $cell2, $dim);
   if (@_ == 3)
-  { ($cell1, $cell2, $dim) = @_; }
-  else
-  { ($cell1, $dim) = @_; }
-  my ($linked_cell) = $ZZ{"$cell1$dim"};
-  if (defined $cell2)
   {
+    ($cell1, $cell2, $dim) = @_;
     die "$cell1 is not linked to $cell2 in dimension $dim"
-      unless $cell2 == $linked_cell;
+      unless $cell2 == $ZZ{"$cell1$dim"};
   }
   else
   {
-    $cell2 = $linked_cell; # Infer second argument
+    ($cell1, $dim) = @_;
+    $cell2 = $ZZ{"$cell1$dim"}; # Infer second argument
   }
 
   die "No cell $cell1" unless defined $ZZ{"$cell1"};
@@ -830,19 +865,6 @@ sub link_make($$$)
 # Functions that operate on individual cells
 # Named cell_*
 #
-sub cell_create($)
-# Create a new cell and optionally edit it
-{
-  my $edit = $_[0];
-  my ($curs, $dir) = input_get_direction();
-  if ($curs)
-  {
-    atcursor_insert($curs, $dir);
-    cursor_move_direction($curs, $dir);
-    atcursor_edit($curs) if $edit;
-  }
-}
-
 sub cell_insert($$$)
 # Insert a cell next to another cell along a given dimension
 #
@@ -885,6 +907,21 @@ sub cell_excise($$)
   link_break($cell, $prev, "-$dim") if defined($prev);
   link_break($cell, $next, "+$dim") if defined($next);
   link_make($prev, $next, "+$dim") if defined($prev) && defined($next);
+}
+
+sub cell_new(;$)
+# Create a new cell (or recycle one from the recycle pile)
+{
+  my $new = $ZZ{"$DELETE_HOME-d.2"};
+
+  # Are there any cells left on the recycle pile?
+  if ($new == $DELETE_HOME)
+  { $new = $ZZ{"n"}++; }
+  else
+  { cell_excise($new, "d.2"); }
+
+  # Assign contents of cell (defaults to the cell number)
+  $ZZ{$new} = (defined $_[0]) ? $_[0] : $new;
 }
 
 #
@@ -997,9 +1034,9 @@ sub atcursor_clone($;$)
   my %selected;
   foreach $cell (@selection)
   {
-    my $new = $ZZ{"n"}++;
-    $selected{$cell} = 'yup';
+    my $new = cell_new();
     $new{$cell} = $new;
+    $selected{$cell} = 'yup';
     if ($op eq 'clone')
     {
       $ZZ{$new} = "Clone of $cell";
@@ -1090,9 +1127,8 @@ sub push_selection()
 # All saved selections move +d.2ward one step.
 # The current selection is now empty.
 {  
-  my $new_sel = $ZZ{"n"}++;
   my $num_selections = cells_row($SELECT_HOME, "+d.2");
-  $ZZ{$new_sel} = "Selection #$num_selections";
+  my $new_sel = cell_new("Selection #$num_selections");
   cell_insert($new_sel, $SELECT_HOME, "+d.2");
   do_shear($SELECT_HOME, "+d.2", "+d.mark", 1);
 }
@@ -1111,8 +1147,7 @@ sub atcursor_insert($$)
   }
   else
   {
-    my $new = $ZZ{"n"}++;
-    $ZZ{$new} = "$new";		# Initial contents will be cell number
+    my $new = cell_new();
     cell_insert($new, get_lastcell($curs, "-d.cursor"), $dim);
 
     display_dirty();
@@ -1152,7 +1187,7 @@ sub atcursor_delete($)
   } until ($index == $ZZ{"$CURSOR_HOME+d.1"});
   $neighbour = 0 unless defined $neighbour;
 
-  # Move $cell to the deleted stack
+  # Move $cell to the recycle pile
   cell_insert($cell, $DELETE_HOME, "+d.2");
 
   # Move the cursor to any $neighbour or home if none
