@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-# Xanadu(R) DIMENSIA(tm) Hyperstructure Kit, $Revision: 0.52 $
+# Xanadu(R) DIMENSIA(tm) Hyperstructure Kit, $Revision: 0.53 $
 #
 # Designed by Ted Nelson
 # Programmed by Andrew Pam ("xanni") and Bek Oberin ("gossamer")
@@ -25,9 +25,12 @@
 # ===================== Change Log
 #
 # Inital zigzag implementation
-# $Id: zigzag,v 0.52 1998/08/29 19:19:43 xanni Exp $
+# $Id: zigzag,v 0.53 1998/08/31 22:17:33 xanni Exp $
 #
 # $Log: zigzag,v $
+# Revision 0.53  1998/08/31 22:17:33  xanni
+# Code cleanup, implemented view_reset()
+#
 # Revision 0.52  1998/08/29 19:19:43  xanni
 # Fixed status line bugs
 #
@@ -53,6 +56,10 @@ use POSIX;
 use File::Copy qw(copy);
 #require 'sys/ioctl.ph';
 
+# Define some aliases for consistency
+*display_clear = *Curses::clear;
+*display_refresh = *Curses::refresh;
+
 # Note: We are using the following naming convention:
 # Constants are named in ALLCAPS
 # Global variables are named with Initial Caps
@@ -62,14 +69,15 @@ use File::Copy qw(copy);
 # Put brackets around all function arguments.
 
 # Define constants
-#my ($VERSION) = q$Revision: 0.52 $ =~ /([\d\.]+)/;
-my $VERSION = q$Id: zigzag,v 0.52 1998/08/29 19:19:43 xanni Exp $;
+#my ($VERSION) = q$Revision: 0.53 $ =~ /([\d\.]+)/;
+my $VERSION = q$Id: zigzag,v 0.53 1998/08/31 22:17:33 xanni Exp $;
 my $FALSE = 0;
 my $TRUE = not $FALSE;
 my $CELLS_PER_WIN = 5;           # Number of cells displayed across each window
 my $CURSOR_HOME = 10;            # NOTE!  This assumes it stays fixed!
 my $DELETE_HOME = 99;            # NOTE!  This assumes it stays fixed!
-my $EDITOR = "/bin/vi";
+my $EDITOR = "/bin/joe";
+   $EDITOR = "/bin/vi" if -x "/bin/vi";
    $EDITOR = "/usr/bin/emacs" if -x "/usr/bin/emacs";
    $EDITOR = "/usr/local/bin/mule" if -x "/usr/local/bin/mule";
    $EDITOR = "/usr/X11R6/bin/gvim -f" if -x "/usr/X11R6/bin/gvim";
@@ -159,7 +167,9 @@ my %Keymap = (  # Keyboard mappings
    "m"                => 'atcursor_mark(1);',
    "Q"                => 'view_quadrant_toggle(0);',
    "q"                => 'view_quadrant_toggle(1);',
-   "\cR"	      => 'foreach (@Window_Dirty) { $_ = $TRUE; }',
+   "R"		      => 'view_reset(0);',
+   "r"		      => 'view_reset(1);',
+   "\cR"	      => 'display_refresh(&curscr); $@ = "";',
    "T"                => 'atcursor_clone(0);',
    "t"                => 'atcursor_clone(1);',
    "V"                => 'view_raster_toggle(0);',
@@ -655,7 +665,7 @@ sub cell_insert($$$)
   if (defined($ZZ{$cell1 . &reverse_sign($dim)}) ||
       ((defined($ZZ{"$cell1$dim"}) && defined($cell3))))
   { 
-     &user_error(1, "$cell1 $dim $cell2"); 
+     &user_error(2, "$cell1 $dim $cell2"); 
   }
   else
   {
@@ -730,7 +740,7 @@ sub cursor_jump($)
   # Must jump to a valid non-cursor cell
   if (!defined $ZZ{$Input_Buffer} || defined $ZZ{"$Input_Buffer-d.cursor"})
   {
-     &user_error(2, $Input_Buffer);
+     &user_error(3, $Input_Buffer);
   }
   else
   {
@@ -777,7 +787,7 @@ sub atcursor_execute($)
   }
   chomp $@;
   if ($@) {
-     &user_error(3, $@);
+     &user_error(4, $@);
      return 0;
   }
 
@@ -826,14 +836,14 @@ sub atcursor_insert($$)
   # Can't insert if it's the clone dimension
   if ($dim =~ /^[+-]d\.clone$/)
   {
-     &user_error(8);
+     &user_error(9);
      return 0;
   }
 
   # Can't insert if it's the cursor dimension
   if ($dim =~ /^[+-]d\.cursor$/)
   {
-     &user_error(9);
+     &user_error(10);
      return 0;
   }
 
@@ -918,7 +928,7 @@ sub atcursor_hop(@)
   my $neighbour = $ZZ{"$cell$dim"};
   if (!defined $neighbour)
   { 
-     &user_error(4, "$cell$dim"); 
+     &user_error(5, "$cell$dim"); 
   }
   else
   {
@@ -987,7 +997,7 @@ sub atcursor_make_link($$)
   }
   elsif (!defined $ZZ{$Input_Buffer})
   {
-     &user_error(5, $Input_Buffer);
+     &user_error(6, $Input_Buffer);
   }
   else
   {
@@ -1014,7 +1024,7 @@ sub atcursor_break_link(@)
   # First check that there is an existing link
   if (!defined($_ = $ZZ{"$cell$dim"}))
   {
-     &user_error(6, "$cell$dim");
+     &user_error(7, "$cell$dim");
   }
   else
   {
@@ -1122,6 +1132,7 @@ sub display_open()
 # (Re)initialise display
 {
   initscr();		# Initialise Curses
+  $@ = "";		# Ignore Curses error
   cbreak();		# Disable line buffering
   noecho();		# Disable echo
   intrflush(0);		# Disable buffer flush on interrupts
@@ -1133,7 +1144,7 @@ sub display_open()
   $Display_Has_Colour = has_colors(); # For Curses to know if it can use colour
   $LOTS_OF_COLOURS = $FALSE unless $Display_Has_Colour;
   # set up for colours
-  if($Display_Has_Colour)
+  if ($Display_Has_Colour)
   {
     start_color();
     init_pair(1, COLOR_WHITE, COLOR_BLACK);
@@ -1147,21 +1158,20 @@ sub display_open()
     init_pair(9, COLOR_BLACK, COLOR_BLUE);
   }
   
-  &display_clear();                # Clear screen
+  &display_clear();		# Clear screen
   &display_refresh();
 
+  my $Reserved = 0;		# Lines for status bar
   if ($USE_STATUSBAR)
   {
-     $Window[0] = newwin($LINES - 1, $COLS / 2, 0, 0);
-     $Window[1] = newwin($LINES - 1, $COLS / 2, 0, $COLS / 2);
-
+     $Reserved = 1;
      $Status = newwin(1, $COLS, $LINES - 1, 0);
      bkgd($Status, $Display_Has_Colour ? COLOR_PAIR(3) : A_REVERSE);
-     &display_refresh($Status);
-  } else {
-     $Window[0] = newwin($LINES, $COLS / 2, 0, 0);
-     $Window[1] = newwin($LINES, $COLS / 2, 0, $COLS / 2);
+     $Status_Dirty = $TRUE;
   }
+
+  $Window[0] = newwin($LINES - $Reserved, $COLS / 2, 0, 0);
+  $Window[1] = newwin($LINES - $Reserved, $COLS / 2, 0, $COLS / 2);
 
   $Cursor_Len = int(($COLS - 1) / ($CELLS_PER_WIN * 2));
 
@@ -1200,24 +1210,6 @@ sub display_resize()
 #  ($LINES, $COLS) = unpack("ss", $winsz);
   &display_open();
   $Display_Resized = $FALSE;
-}
-
-sub display_clear()
-{
-   clear();
-}
-
-sub display_refresh()
-{
-   my $win = shift;
-   if ($win)
-   {
-      refresh($win);
-   }
-   else
-   {
-      refresh();
-   }
 }
 
 #
@@ -1586,6 +1578,20 @@ sub view_raster_toggle($)
   { $_ = $TRUE; }
 }
 
+sub view_reset($)
+# Reset dimensions of given cursor
+{
+  my ($number) = @_;
+  my $curs = &get_cursor($number);
+  my $index = $ZZ{"$CURSOR_HOME+d.1"}; # Dimension list is +d.1 from Cursor home
+
+  $ZZ{$curs = $ZZ{"$curs+d.1"}} = "+$ZZ{$index}";
+  $ZZ{$curs = $ZZ{"$curs+d.1"}} = "+" . $ZZ{$index = $ZZ{"$index+d.2"}};
+  $ZZ{$curs = $ZZ{"$curs+d.1"}} = "+" . $ZZ{$index = $ZZ{"$index+d.2"}};
+
+  $Window_Dirty[$number] = $TRUE;
+}
+
 sub view_rotate($$)
 # Rotate dimensions of given cursor around given axis
 {
@@ -1645,7 +1651,7 @@ sub input_get_direction()
   else
   {
     # The key isn't a direction key
-    &user_error(0, $key);
+    &user_error(1, $key);
     undef @_;
   }
 }
@@ -1660,7 +1666,7 @@ sub input_process_digit($)
   elsif ($Input_Buffer < 1000000000)
   { $Input_Buffer = $Input_Buffer * 10 + $_[0];  $Status_Dirty = $TRUE; }
   else
-  { beep(); &display_refresh($Status) if $USE_STATUSBAR; }
+  { &user_error(0, ""); }
 }
 
 sub input_process_backspace()
@@ -1676,7 +1682,7 @@ sub input_process_backspace()
     $Status_Dirty = $TRUE;
   }
   else
-  { beep(); &display_refresh($Status) if $USE_STATUSBAR; }
+  { &user_error(0, ""); }
 }
 
 #
@@ -1694,8 +1700,7 @@ sub catchwinch()
 sub user_error($$)
 # Handle user errors
 {
-   my $errno = shift;
-   my $text = shift;
+   my ($errno, $text) = @_;
 
    # I feel like this next should be a global.  It's not.
    my @errors = (
@@ -1712,8 +1717,9 @@ sub user_error($$)
    );
 
    beep(); 
-   if ($USE_STATUSBAR)
+   if ($errno and $USE_STATUSBAR)
    {
+      $errno--;
       my $errmsg = "Error $errno: " . $errors[$errno] if $errno <= $#errors;
       if ($text)
       {
@@ -1723,9 +1729,11 @@ sub user_error($$)
       {
          &status_draw(substr("$errmsg", 0, $COLS));
       }
-      &display_refresh($Status);
       $StatusTimer = 20;
    }
+
+   if ($USE_STATUSBAR)
+   { &display_refresh($Status); }
    else
    { &display_refresh(); }
 }
@@ -1769,7 +1777,6 @@ $SIG{INT} = $SIG{TERM} = \&catchsig;
 $SIG{WINCH} = \&catchwinch;
 
 &display_open();
-$@ = "";		# Ignore Curses error
 eval
 {
   my $key_pressed = &input_get_any();
@@ -1814,7 +1821,7 @@ eval
   }
   else # The key isn't a digit, a direction key or in %Keymap
   {
-     &user_error(0, $key_pressed);
+     &user_error(1, $key_pressed);
   }
   &display_resize if $Display_Resized;
 }
