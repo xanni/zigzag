@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-# Xanadu(R) DIMENSIA(tm) Hyperstructure Kit, $Revision: 0.54 $
+# Xanadu(R) DIMENSIA(tm) Hyperstructure Kit, $Revision: 0.55 $
 #
 # Designed by Ted Nelson
 # Programmed by Andrew Pam ("xanni") and Bek Oberin ("gossamer")
@@ -25,9 +25,13 @@
 # ===================== Change Log
 #
 # Inital zigzag implementation
-# $Id: zigzag,v 0.54 1998/10/08 03:56:21 xanni Exp $
+# $Id: zigzag,v 0.55 1998/10/26 05:37:32 xanni Exp $
 #
 # $Log: zigzag,v $
+# Revision 0.55  1998/10/26 05:37:32  xanni
+# Change default file extension and incorporate EDITOR selection patch
+# from Mark-Jason Dominus <mjd@plover.com>
+#
 # Revision 0.54  1998/10/08 03:56:21  xanni
 # Incorporate Gossamer's changes, fix $TEMP_FILE problem
 #
@@ -77,19 +81,15 @@ use File::Copy qw(copy);
 # Put brackets around all function arguments.
 
 # Define constants
-#my ($VERSION) = q$Revision: 0.54 $ =~ /([\d\.]+)/;
-my $VERSION = q$Id: zigzag,v 0.54 1998/10/08 03:56:21 xanni Exp $;
+#my ($VERSION) = q$Revision: 0.55 $ =~ /([\d\.]+)/;
+my $VERSION = q$Id: zigzag,v 0.55 1998/10/26 05:37:32 xanni Exp $;
 my $FALSE = 0;
 my $TRUE = not $FALSE;
 my $CELLS_PER_WIN = 5;           # Number of cells displayed across each window
 my $CURSOR_HOME = 10;            # NOTE!  This assumes it stays fixed!
 my $DELETE_HOME = 99;            # NOTE!  This assumes it stays fixed!
-my $EDITOR = "/bin/joe";
-   $EDITOR = "/bin/vi" if -x "/bin/vi";
-   $EDITOR = "/usr/bin/emacs" if -x "/usr/bin/emacs";
-   $EDITOR = "/usr/local/bin/mule" if -x "/usr/local/bin/mule";
-   $EDITOR = "/usr/X11R6/bin/gvim -f" if -x "/usr/X11R6/bin/gvim";
-my $FILENAME = "zigzag.data";    # Default filename for initial slice
+my $EDITOR = choose_editor();    
+my $FILENAME = "zigzag.zz";      # Default filename for initial slice
 my $TEMP_FILE = "/tmp/zigzag-$<-$^T"; # Filename used for external editing
 my $LOTS_OF_COLOURS = $TRUE;     # What style
 my $USE_STATUSBAR = $TRUE;       # Are we using the status bar?
@@ -1779,6 +1779,33 @@ sub user_error($$)
    { &display_refresh(); }
 }
 
+
+#
+# Initialization functions
+#
+sub choose_editor() 
+# Choose editor based on ordinary user preferences, if available.
+# That means look at VISUAL and EDITOR environment variables, in that
+# order.
+# 
+# If neither is set, use old logic: Select first program available
+# from a list that includes several common editors.
+{
+  my @edlist = qw(/usr/local/bin/mule
+		  /usr/bin/emacs
+		  /bin/vi
+		  /bin/joe
+		 );
+  my $editor = $ENV{VISUAL} || $ENV{EDITOR};
+  return $editor if $editor;
+  my $e;
+  foreach $e (@edlist) {
+    return $e if -x $e;
+  }
+  print STDERR "Sorry, ZigZag couldn't locate any usable editor.
+Please set your EDITOR variable and try again.\n";
+  exit 0;
+}
 
 #
 # Background functions, if any, can be executed here
