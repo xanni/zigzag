@@ -1,4 +1,4 @@
-# Xanadu(R) ZigZag(tm) Hyperstructure Kit, $Revision: 0.65 $
+# Xanadu(R) ZigZag(tm) Hyperstructure Kit, $Revision: 0.66 $
 #
 # Designed by Ted Nelson
 # Programmed by Andrew Pam ("xanni") and Bek Oberin ("gossamer")
@@ -29,9 +29,13 @@
 # ===================== Change Log
 #
 # Inital ZigZag implementation
-# $Id: Zigzag.pm,v 0.65 1999/01/07 04:04:52 xanni Exp $
+# $Id: Zigzag.pm,v 0.66 1999/01/07 07:15:30 xanni Exp $
 #
 # $Log: Zigzag.pm,v $
+# Revision 0.66  1999/01/07 07:15:30  xanni
+# Minor fixes to db_open()
+# Replaced window_draw_* functions with new layout_* functions
+#
 # Revision 0.65  1999/01/07 04:04:52  xanni
 # Derived from the monolithic zigzag 0.64
 #
@@ -105,11 +109,9 @@ use Exporter;
     atcursor_make_link
     atcursor_break_link
     cells_row
-    window_draw_cells_horizontal
-    window_draw_cells_vertical
-    window_draw_preview
-    window_draw_Iraster
-    window_draw_Hraster
+    layout_preview
+    layout_Iraster
+    layout_Hraster
     view_quadrant_toggle
     view_raster_toggle
     view_reset
@@ -123,14 +125,11 @@ use strict;
 use POSIX;
 use DB_File;
 #use Fcntl;
-use File::Copy qw(copy);
+use File::Copy;
 
 # Import functions
 *display_dirty = *::display_dirty;
-*display_draw_cell = *::display_draw_cell;
-*display_draw_quad = *::display_draw_quad;
-*display_draw_link_horizontal = *::display_draw_link_horizontal;
-*display_draw_link_vertical = *::display_draw_link_vertical;
+*display_status_draw = *::display_status_draw;
 *user_error = *::user_error;
 *atcursor_edit = *::atcursor_edit;
 *input_get_direction = *::input_get_direction;
@@ -146,8 +145,8 @@ use File::Copy qw(copy);
 
 # Define constants
 use vars qw($VERSION);
-#($VERSION) = q$Revision: 0.65 $ =~ /([\d\.]+)/;
-$VERSION = do { my @r = (q$Revision: 0.65 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r }; # must be all one line, for MakeMaker
+#($VERSION) = q$Revision: 0.66 $ =~ /([\d\.]+)/;
+$VERSION = do { my @r = (q$Revision: 0.66 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r }; # must be all one line, for MakeMaker
 my $FALSE = 0;
 my $TRUE = !$FALSE;
 my $CURSOR_HOME = 10;            # NOTE!  This assumes it stays fixed!
@@ -362,14 +361,17 @@ sub initial_geometry()
    );
 }
 
-sub db_open()
+sub db_open(;$)
 {
-  # If there's a command line parameter, use it as the filename
+  # If there's a parameter, use it as the filename
   my $Filename = shift || $FILENAME;
   if (-e $Filename)
   {
     # we have an existing datafile - back it up!
-    copy($Filename, $Filename . $BACKUP_FILE_SUFFIX);
+    move($Filename, $Filename . $BACKUP_FILE_SUFFIX)
+      || die "Can't rename data file \"$Filename\": $!\n";
+    copy($Filename . $BACKUP_FILE_SUFFIX, $Filename)
+      || die "Can't copy data file \"$Filename\": $!\n";
     $DB_Ref = tie %ZZ, 'DB_File', $Filename, O_RDWR
       || die "Can't open data file \"$Filename\": $!\n";
   }
@@ -1294,154 +1296,131 @@ sub cells_row($$)
   @result;
 }
 
-
 # Functions that lay out cells in a window
-# Named: window_draw_*
+# Named: layout_*
 #
-sub window_draw_cells_horizontal($$$$$)
-# Draw cells horizontally at row starting at cell
+sub layout_cells_horizontal($$$$$)
+# Layout cells horizontally at row starting at cell
 {
-  my ($win, $cell, $row, $dim, $sign) = @_;
-  my $i;
+  my ($lref, $cell, $row, $dim, $sign) = @_;
 
-  # Draw at most half a screen of cells
-  for ($i = 1; defined $cell && ($i <= int($Hcells / 2)); $i++)
+  # Layout at most half a screen of cells
+  for (my $i = 1; defined $cell && ($i <= int($Hcells / 2)); $i++)
   {
     # Find the next cell, if any
     if (defined ($cell = $ZZ{"$cell$dim"}))
     {
-      display_draw_link_horizontal($win, $row, $sign * $i);
-      display_draw_cell($win, $cell, $row, $sign * $i);
+      my $col = $sign * $i;
+      $$lref{"$col,$row"} = $cell;
+      $$lref{"$col-$row"} = $TRUE;
     }
   }
 }
 
-sub window_draw_cells_vertical($$$$$)
-# Draw cells vertically at col starting at cell
+sub layout_cells_vertical($$$$$)
+# Layout cells vertically at col starting at cell
 {
-  my ($win, $cell, $col, $dim, $sign) = @_;
-  my $i;
+  my ($lref, $cell, $col, $dim, $sign) = @_;
 
-  # Draw at most half a screen of cells
-  for ($i = 1; defined $cell && ($i <= int($Vcells / 2)); $i++)
+  # Layout at most half a screen of cells
+  for (my $i = 1; defined $cell && ($i <= int($Vcells / 2)); $i++)
   {
     # Find the next cell, if any
     if (defined ($cell = $ZZ{"$cell$dim"}))
     {
-      display_draw_link_vertical($win, $sign * $i, $col);
-      display_draw_cell($win, $cell, $sign * $i, $col);
+      my $row = $sign * $i;
+      $$lref{"$col,$row"} = $cell;
+      $$lref{"$col|$row"} = $TRUE;
     }
   }
 }
 
-sub window_draw_preview($$$$$)
-# Draw a quick preview of the window starting at cell
+sub layout_preview($$$$)
+# Layout a preview of the window starting at cell
 {
-  my ($win, $cell, $right, $down, $quad) = @_;
-#  my $win = $Window[$number];
+  my ($lref, $cell, $right, $down) = @_;
 
-  if ($quad)
-  { display_draw_quad($win, $cell, $TRUE); }
-  else
-  {
-    display_draw_cell($win, $cell, 0, 0);
-    window_draw_cells_horizontal($win, $cell, 0, $right, 1);
-    window_draw_cells_vertical($win, $cell, 0, $down, 1);
-  }
-  window_draw_cells_horizontal($win, $cell, 0, reverse_sign($right), -1);
-  window_draw_cells_vertical($win, $cell, 0, reverse_sign($down), -1);
+  $$lref{"0,0"} = $cell;
+  layout_cells_horizontal($lref, $cell, 0, reverse_sign($right), -1);
+  layout_cells_vertical($lref, $cell, 0, reverse_sign($down), -1);
+  layout_cells_horizontal($lref, $cell, 0, $right, 1);
+  layout_cells_vertical($lref, $cell, 0, $down, 1);
 }
 
-sub window_draw_Iraster($$$$$)
-# Horizontal ("I raster") window redraw starting at cell
+sub layout_Iraster($$$$)
+# Horizontal ("I raster") window layout starting at cell
 {
-  my ($win, $cell, $right, $down, $quad) = @_;
-#  my $win = $Window[$number];
+  my ($lref, $cell, $right, $down) = @_;
   my $left = reverse_sign($right);
   my $up = reverse_sign($down);
-  my ($y, $i, $j);
+  my ($y, $i);
 
-  if ($quad)
-  { display_draw_quad($win, $cell, $FALSE); }
-  else
-  {
-    display_draw_cell($win, $cell, 0, 0);
-    window_draw_cells_horizontal($win, $cell, 0, $right, 1);
-  }
-  window_draw_cells_horizontal($win, $cell, 0, $left, -1);
+  $$lref{"0,0"} = $cell;
+  layout_cells_horizontal($lref, $cell, 0, $left, -1);
+  layout_cells_horizontal($lref, $cell, 0, $right, 1);
 
-  # Draw up to half a screen each above and below if necessary
-  for ($y = 1, $i = $j = $cell;
-       (defined $i || defined $j) && ($y <= int($Vcells / 2));
-       $y++)
+  for ($y = 1, $i = $cell; defined $i && ($y <= int($Vcells / 2)); $y++)
   {
     # Find the next cell above, if any
     if (defined $i && defined ($i = $ZZ{"$i$up"}))
     {
-      display_draw_link_vertical($win, -$y, 0);
-      display_draw_cell($win, $i, -$y, 0);
-      window_draw_cells_horizontal($win, $i, -$y, $left, -1);
-      window_draw_cells_horizontal($win, $i, -$y, $right, 1);
+      $$lref{"0,-$y"} = $i;
+      $$lref{"0|-$y"} = $TRUE;
+      layout_cells_horizontal($lref, $i, -$y, $left, -1);
+      layout_cells_horizontal($lref, $i, -$y, $right, 1);
     }
-
+  }
+  
+  for ($y = 1, $i = $cell; defined $i && ($y <= int($Vcells / 2)); $y++)
+  {
     # Find the next cell below, if any
-    if (defined $j && defined ($j = $ZZ{"$j$down"}))
+    if (defined $i && defined ($i = $ZZ{"$i$down"}))
     {
-      if (!$quad)
-      {
-        display_draw_link_vertical($win, $y, 0);
-        display_draw_cell($win, $j, $y, 0);
-        window_draw_cells_horizontal($win, $j, $y, $right, 1);
-      }
-      window_draw_cells_horizontal($win, $j, $y, $left, -1);
+      $$lref{"0,$y"} = $i;
+      $$lref{"0|$y"} = $TRUE;
+      layout_cells_horizontal($lref, $i, $y, $left, -1);
+      layout_cells_horizontal($lref, $i, $y, $right, 1);
     }
   }
 }
 
-sub window_draw_Hraster($$$$$)
-# Vertical ("H raster") window redraw starting at cell
+sub layout_Hraster($$$$)
+# Vertical ("H raster") window layout starting at cell
 {
-  my ($win, $cell, $right, $down, $quad) = @_;
-#  my $win = $Window[$number];
+  my ($lref, $cell, $right, $down) = @_;
   my $left = reverse_sign($right);
   my $up = reverse_sign($down);
-  my ($x, $i, $j);
+  my ($x, $i);
 
-  if ($quad)
-  { display_draw_quad($win, $cell, $FALSE); }
-  else
-  {
-    display_draw_cell($win, $cell, 0, 0);
-    window_draw_cells_vertical($win, $cell, 0, $down, 1);
-  }
-  window_draw_cells_vertical($win, $cell, 0, $up, -1);
+  $$lref{"0,0"} = $cell;
+  layout_cells_vertical($lref, $cell, 0, $up, -1);
+  layout_cells_vertical($lref, $cell, 0, $down, 1);
 
-  # Draw up to half a screen each left and right if necessary
-  for ($x = 1, $i = $j = $cell;
-       (defined $i || defined $j) && ($x <= int($Hcells / 2)); $x++)
+  for ($x = 1, $i = $cell; defined $i && ($x <= int($Hcells / 2)); $x++)
   {
     # Find the next cell to the left, if any
     if (defined $i && defined ($i = $ZZ{"$i$left"}))
     {
-      display_draw_link_horizontal($win, 0, -$x);
-      display_draw_cell($win, $i, 0, -$x);
-      window_draw_cells_vertical($win, $i, -$x, $up, -1);
-      window_draw_cells_vertical($win, $i, -$x, $down, 1);
+      $$lref{"-$x,0"} = $i;
+      $$lref{"-$x-0"} = $TRUE;
+      layout_cells_vertical($lref, $i, -$x, $up, -1);
+      layout_cells_vertical($lref, $i, -$x, $down, 1);
     }
+  }
 
+  for ($x = 1, $i = $cell; defined $i && ($x <= int($Hcells / 2)); $x++)
+  {
     # Find the next cell to the right, if any
-    if (defined $j && defined ($j = $ZZ{"$j$right"}))
+    if (defined $i && defined ($i = $ZZ{"$i$right"}))
     {
-      if (!$quad)
-      {
-        display_draw_link_horizontal($win, 0, $x);
-        display_draw_cell($win, $j, 0, $x);
-        window_draw_cells_vertical($win, $j, $x, $down, 1);
-      }
-      window_draw_cells_vertical($win, $j, $x, $up, -1);
+      $$lref{"$x,0"} = $i;
+      $$lref{"$x-0"} = $TRUE;
+      layout_cells_vertical($lref, $i, $x, $up, -1);
+      layout_cells_vertical($lref, $i, $x, $down, 1);
     }
   }
 }
+
 
 #
 # View functions.  These munge options which control how the
@@ -1491,7 +1470,6 @@ sub view_reset($)
   $ZZ{$curs = $ZZ{"$curs+d.1"}} = "+" . $ZZ{$index = $ZZ{"$index+d.2"}};
   $ZZ{$curs = $ZZ{"$curs+d.1"}} = "+" . $ZZ{$index = $ZZ{"$index+d.2"}};
 
-#  $Window_Dirty[$number] = $TRUE;
   display_dirty();
 }
 
@@ -1516,7 +1494,6 @@ sub view_rotate($$)
   }
 
   $ZZ{$curs} = substr($ZZ{$curs}, 0, 1) . $ZZ{$ZZ{"$index+d.2"}};
-#  $Window_Dirty[$number] = $TRUE;
   display_dirty();
 }
 
@@ -1530,7 +1507,6 @@ sub view_flip($$)
   $curs = $ZZ{"$curs+d.1"} if $axis eq "Z";
 
   $ZZ{$curs} = reverse_sign($ZZ{$curs});
-#  $Window_Dirty[$number] = $TRUE;
   display_dirty();
 }
 
