@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-# Xanadu(R) DIMENSIA(tm) Hyperstructure Kit, $Revision: 0.62 $
+# Xanadu(R) DIMENSIA(tm) Hyperstructure Kit, $Revision: 0.63 $
 #
 # Designed by Ted Nelson
 # Programmed by Andrew Pam ("xanni") and Bek Oberin ("gossamer")
@@ -25,9 +25,13 @@
 # ===================== Change Log
 #
 # Inital zigzag implementation
-# $Id: zigzag,v 0.62 1998/11/23 13:59:55 xanni Exp $
+# $Id: zigzag,v 0.63 1999/01/06 05:07:14 xanni Exp $
 #
 # $Log: zigzag,v $
+# Revision 0.63  1999/01/06 05:07:14  xanni
+# Created display_dirty() and generally fixed up dirty handling
+# Minor cleanup of error handling and Meta support
+#
 # Revision 0.62  1998/11/23 13:59:55  xanni
 # Renamed the "Midden" cell to "Recycle pile", fixed Meta (aka Alt) support
 #
@@ -115,8 +119,8 @@ use File::Copy qw(copy);
 # Use the $TRUE and $FALSE constants instead of "1" and "0"
 
 # Define constants
-#my ($VERSION) = q$Revision: 0.62 $ =~ /([\d\.]+)/;
-my $VERSION = q$Id: zigzag,v 0.62 1998/11/23 13:59:55 xanni Exp $;
+#my ($VERSION) = q$Revision: 0.63 $ =~ /([\d\.]+)/;
+my $VERSION = q$Id: zigzag,v 0.63 1999/01/06 05:07:14 xanni Exp $;
 my $FALSE = 0;
 my $TRUE = !$FALSE;
 my $CELLS_PER_WIN = 5;           # Number of cells displayed across each window
@@ -827,8 +831,7 @@ sub do_shear($$$;$$)
     link_make($shear_cell,  $new_link, $link);
   }
 
-  foreach (@Window_Dirty)
-  { $_ = $TRUE; }
+  display_dirty();
 }
 
 #
@@ -943,10 +946,12 @@ sub cell_excise($$)
   link_make($prev, $next, "+$dim") if defined($prev) && defined($next);
 }
 
+
 #
 # Functions that operate on the cursor cell
 # Named cursor_*
 #
+
 sub cursor_move_dimension($$)
 # Move cursor along a given dimension
 #
@@ -977,8 +982,7 @@ sub cursor_move_dimension($$)
   cell_excise($curs, "d.cursor");
   cell_insert($curs, $cell, "+d.cursor");
 
-  foreach (@Window_Dirty)
-  { $_ = $TRUE; }
+  display_dirty();
 }
 
 sub cursor_jump_input($)
@@ -988,6 +992,7 @@ sub cursor_jump_input($)
   my $dest = defined($Input_Buffer) ? $Input_Buffer : 0;
   cursor_jump($_[0], $dest);
   undef $Input_Buffer;
+  $Status_Dirty = $TRUE;
 }
 
 sub cursor_jump($$)
@@ -1004,10 +1009,8 @@ sub cursor_jump($$)
     cell_excise($curs, "d.cursor");
     cell_insert($curs, get_lastcell($dest, "+d.cursor"), "+d.cursor");
 
-    foreach (@Window_Dirty)
-    { $_ = $TRUE; }
+    display_dirty();
   }
-  $Window_Dirty[0] = $TRUE;
 }
 
 sub cursor_move_direction($$)
@@ -1040,13 +1043,7 @@ sub atcursor_execute($)
     last if $@;
   }
   chomp $@;
-  if ($@)
-  {
-     user_error(4, $@);
-     return $FALSE;
-  }
-
-  return $TRUE;
+  user_error(4, $@) if ($@);
 }
 
 sub atcursor_clone($;$)
@@ -1110,8 +1107,7 @@ sub atcursor_clone($;$)
 
   cursor_jump($curs, $last_new_cell);
 
-  foreach (@Window_Dirty)
-  { $_ = $TRUE; }
+  display_dirty();
 }
 
 sub atcursor_copy($)
@@ -1144,8 +1140,7 @@ sub atcursor_select($)
   }
   #cursor_move_dimension($curs, "+d.mark");
 
-  foreach (@Window_Dirty)
-  { $_ = $TRUE; }
+  display_dirty();
 }
 
 sub rotate_selection () 
@@ -1179,26 +1174,19 @@ sub atcursor_insert($$)
   my $curs = get_cursor($_[0]);
   my $dim = get_dimension($curs, $_[1]);
 
-  # Can't insert if it's the clone dimension
-  if ($dim =~ /^[+-]d\.clone$/)
+  # Can't insert if it's the cursor or clone dimension
+  if ($dim =~ /^[+-]d\.(clone|cursor)$/)
   {
-     user_error(9);
-     return $FALSE;
+     user_error(9, $dim);
   }
-
-  # Can't insert if it's the cursor dimension
-  if ($dim =~ /^[+-]d\.cursor$/)
+  else
   {
-     user_error(10);
-     return $FALSE;
+    my $new = $ZZ{"n"}++;
+    $ZZ{$new} = "$new";		# Initial contents will be cell number
+    cell_insert($new, get_lastcell($curs, "-d.cursor"), $dim);
+
+    display_dirty();
   }
-
-  my $new = $ZZ{"n"}++;
-  $ZZ{$new} = "$new";                # Initial contents will be cell number
-  cell_insert($new, get_lastcell($curs, "-d.cursor"), $dim);
-
-  foreach (@Window_Dirty)
-  { $_ = $TRUE; }
 }
 
 sub atcursor_delete($)
@@ -1241,8 +1229,7 @@ sub atcursor_delete($)
   $cell = get_lastcell($neighbour, "+d.cursor");
   cell_insert($curs, $cell, "+d.cursor");
 
-  foreach (@Window_Dirty)
-  { $_ = $TRUE; }
+  display_dirty();
 }
 
 sub atcursor_hop(@)
@@ -1282,8 +1269,7 @@ sub atcursor_hop(@)
     }
     link_make($neighbour, $cell, $dim);
     
-    foreach (@Window_Dirty)
-    { $_ = $TRUE; }
+    display_dirty();
   }
 }
 
@@ -1355,8 +1341,7 @@ sub atcursor_make_link($$)
     cell_insert($Input_Buffer, get_lastcell($curs, "-d.cursor"), $dim);
     undef $Input_Buffer;
 
-    foreach (@Window_Dirty)
-    { $_ = $TRUE; }
+    display_dirty();
   }
 }
 
@@ -1379,8 +1364,7 @@ sub atcursor_break_link(@)
   {
     link_break($cell, $_, $dim);
 
-    foreach (@Window_Dirty)
-    { $_ = $TRUE; }
+    display_dirty();
   }
 }
 
@@ -1416,8 +1400,7 @@ sub atcursor_import(@)
     }
     close(TEMP);
 
-    foreach (@Window_Dirty)
-    { $_ = $TRUE; }
+    display_dirty();
   }
 
   unlink $TEMP_FILE;
@@ -1575,6 +1558,13 @@ sub display_resize()
 #  ($LINES, $COLS) = unpack("ss", $winsz);
   display_open();
   $Display_Resized = $FALSE;
+}
+
+sub display_dirty()
+# The data structure has changed, so we will have to redraw
+{
+    foreach (@Window_Dirty)
+    { $_ = $TRUE; }
 }
 
 sub display_status_draw($)
@@ -1937,8 +1927,7 @@ sub view_quadrant_toggle($)
   else
   { $ZZ{$cell} .= "Q"; }
 
-  foreach (@Window_Dirty)
-  { $_ = $TRUE; }
+  display_dirty();
 }
 
 sub view_raster_toggle($)
@@ -1953,8 +1942,7 @@ sub view_raster_toggle($)
   # Toggle the value between "I" and "H"
   $ZZ{$cell} =~ tr/IH/HI/;
 
-  foreach (@Window_Dirty)
-  { $_ = $TRUE; }
+  display_dirty();
 }
 
 sub view_reset($)
@@ -1968,7 +1956,8 @@ sub view_reset($)
   $ZZ{$curs = $ZZ{"$curs+d.1"}} = "+" . $ZZ{$index = $ZZ{"$index+d.2"}};
   $ZZ{$curs = $ZZ{"$curs+d.1"}} = "+" . $ZZ{$index = $ZZ{"$index+d.2"}};
 
-  $Window_Dirty[$number] = $TRUE;
+#  $Window_Dirty[$number] = $TRUE;
+  display_dirty();
 }
 
 sub view_rotate($$)
@@ -1992,7 +1981,8 @@ sub view_rotate($$)
   }
 
   $ZZ{$curs} = substr($ZZ{$curs}, 0, 1) . $ZZ{$ZZ{"$index+d.2"}};
-  $Window_Dirty[$number] = $TRUE;
+#  $Window_Dirty[$number] = $TRUE;
+  display_dirty();
 }
 
 sub view_flip($$)
@@ -2005,7 +1995,8 @@ sub view_flip($$)
   $curs = $ZZ{"$curs+d.1"} if $axis eq "Z";
 
   $ZZ{$curs} = reverse_sign($ZZ{$curs});
-  $Window_Dirty[$number] = $TRUE;
+#  $Window_Dirty[$number] = $TRUE;
+  display_dirty();
 }
 
 #
@@ -2017,6 +2008,8 @@ sub input_get_any()
 # NOTE: This function is also user interface toolkit specific!
 {
   my $key = getch();
+  if (($key eq "\e") && (($_ = getch()) ne -1))
+  { $key = meta_key($_); }
   return $key eq -1 ? undef : $key;
 }
 
@@ -2093,8 +2086,7 @@ sub user_error($$)
     "Cannot jump to cell that does not exist",
     "Cannot break link - none exists",
     "Error opening file",
-    "Cannot insert cells in the clone dimension",
-    "Cannot insert cells in the cursor dimension",
+    "Cannot insert cells in selected dimension",
   );
 
   beep(); 
@@ -2205,9 +2197,6 @@ eval
   { idle(); }
   else
   {
-    if (($key_pressed eq "\e") && defined ($_ = input_get_any()))
-    { $key_pressed = meta_key($_); }
-
     if ($key_pressed =~ /^\d$/)
     {
       input_process_digit($key_pressed);
@@ -2232,7 +2221,7 @@ eval
       user_error(1, $key_pressed);
     }
   }
-  display_resize if $Display_Resized;
+  display_resize() if $Display_Resized;
 }
 until ($@ || $ZigZag_Terminated);
 
