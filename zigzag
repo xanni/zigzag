@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-# Xanadu(R) DIMENSIA(tm) Hyperstructure Kit, $Revision: 0.60 $
+# Xanadu(R) DIMENSIA(tm) Hyperstructure Kit, $Revision: 0.61 $
 #
 # Designed by Ted Nelson
 # Programmed by Andrew Pam ("xanni") and Bek Oberin ("gossamer")
@@ -25,9 +25,14 @@
 # ===================== Change Log
 #
 # Inital zigzag implementation
-# $Id: zigzag,v 0.60 1998/11/21 08:24:21 xanni Exp $
+# $Id: zigzag,v 0.61 1998/11/21 16:46:33 xanni Exp $
 #
 # $Log: zigzag,v $
+# Revision 0.61  1998/11/21 16:46:33  xanni
+# Defined $Hcells and $Vcells, fixed $Cell_Width bug,
+# created display_draw_link_* functions, finished making
+# window_draw_* functions independent of the UI toolkit.
+#
 # Revision 0.60  1998/11/21 08:24:21  xanni
 # Introduced window_draw_preview, cleaned up display_draw_quad
 #
@@ -107,8 +112,8 @@ use File::Copy qw(copy);
 # Use the $TRUE and $FALSE constants instead of "1" and "0"
 
 # Define constants
-#my ($VERSION) = q$Revision: 0.60 $ =~ /([\d\.]+)/;
-my $VERSION = q$Id: zigzag,v 0.60 1998/11/21 08:24:21 xanni Exp $;
+#my ($VERSION) = q$Revision: 0.61 $ =~ /([\d\.]+)/;
+my $VERSION = q$Id: zigzag,v 0.61 1998/11/21 16:46:33 xanni Exp $;
 my $FALSE = 0;
 my $TRUE = !$FALSE;
 my $CELLS_PER_WIN = 5;           # Number of cells displayed across each window
@@ -135,6 +140,8 @@ my $Display_Resized;             # True when window has been resized
 my $ZigZag_Terminated;           # True when interrupted by a signal
 my $Command_Count;               # Counts commands between DB syncs
 my $DB_Ref;                      # We use this for sync'ing.
+my $Hcells;			 # Horizontal cells per window
+my $Vcells;			 # Vertical cells per window
 # curses-specific globals
 my @Window;                      # Curses window handles
 my $Cell_Width;                  # Current display width of the cells
@@ -1528,7 +1535,9 @@ sub display_open()
   $Window[0] = newwin($LINES - $Reserved, $COLS / 2, 0, 0);
   $Window[1] = newwin($LINES - $Reserved, $COLS / 2, 0, $COLS / 2);
 
-  $Cell_Width = int(($COLS - 1) / ($CELLS_PER_WIN * 2));
+  $Hcells = $CELLS_PER_WIN;
+  $Vcells = int(($LINES + 1 - $Reserved) / 4) * 2 - 1;
+  $Cell_Width = int(($COLS - 4) / ($CELLS_PER_WIN * 2));
   $Window_Xcentre = int($COLS / 4) - int($Cell_Width / 2);
   $Window_Ycentre = int(($LINES - 1) / 2);
 
@@ -1605,6 +1614,12 @@ sub display_monospace($$)
   }
 }
 
+#
+# Functions that draw things in a given window.  The windows are a
+# logical thing that may be any subsection of the display, or all
+# of it.
+# Named: display_draw_*
+#
 sub display_draw_cell($$$$)
 # Draw cell at row and column
 {
@@ -1666,6 +1681,24 @@ sub display_draw_quad($$$)
             display_monospace($_, $width), $width);
     attrset($win, A_NORMAL);
   }
+}
+
+sub display_draw_link_horizontal($$$)
+# Draw a horizontal connection next to a cell
+{
+  my ($win, $y, $x) = @_;
+
+  addch($win, $Window_Ycentre + $y * 2,
+        $Window_Xcentre + ($x < 0 ? $x + 1 : $x) * $Cell_Width - 1, ACS_HLINE);
+}
+
+sub display_draw_link_vertical($$$)
+# Draw a vertical connection above or below a cell
+{
+  my ($win, $y, $x) = @_;
+
+  addch($win, $Window_Ycentre + $y * 2 + ($y < 0 ? 1 : -1),
+        $Window_Xcentre + $x * $Cell_Width + int($Cell_Width / 2), ACS_VLINE);
 }
 
 sub display_draw_window($$)
@@ -1734,11 +1767,45 @@ sub display_draw_window($$)
 
 
 #
-# Functions that draw things in a given window.  The windows are a
-# logical thing that may be any subsection of the display, or all
-# of it.
+# Functions that lay out cells in a window
 # Named: window_draw_*
 #
+sub window_draw_cells_horizontal($$$$$)
+# Draw cells horizontally at row starting at cell
+{
+  my ($win, $cell, $row, $dim, $sign) = @_;
+  my $i;
+
+  # Draw at most half a screen of cells
+  for ($i = 1; defined $cell && ($i <= int($Hcells / 2)); $i++)
+  {
+    # Find the next cell, if any
+    if (defined ($cell = $ZZ{"$cell$dim"}))
+    {
+      display_draw_link_horizontal($win, $row, $sign * $i);
+      display_draw_cell($win, $cell, $row, $sign * $i);
+    }
+  }
+}
+
+sub window_draw_cells_vertical($$$$$)
+# Draw cells vertically at col starting at cell
+{
+  my ($win, $cell, $col, $dim, $sign) = @_;
+  my $i;
+
+  # Draw at most half a screen of cells
+  for ($i = 1; defined $cell && ($i <= int($Vcells / 2)); $i++)
+  {
+    # Find the next cell, if any
+    if (defined ($cell = $ZZ{"$cell$dim"}))
+    {
+      display_draw_link_vertical($win, $sign * $i, $col);
+      display_draw_cell($win, $cell, $sign * $i, $col);
+    }
+  }
+}
+
 sub window_draw_preview($$$$$)
 # Draw a quick preview of the window starting at cell
 {
@@ -1777,14 +1844,13 @@ sub window_draw_Iraster($$$$$)
 
   # Draw up to half a screen each above and below if necessary
   for ($y = 1, $i = $j = $cell;
-       (defined $i || defined $j || $quad) && ($y * 2 < $Window_Ycentre);
+       (defined $i || defined $j) && ($y <= int($Vcells / 2));
        $y++)
   {
     # Find the next cell above, if any
     if (defined $i && defined ($i = $ZZ{"$i$up"}))
     {
-      addch($win, $Window_Ycentre - $y * 2 + 1,
-            $Window_Xcentre + int($Cell_Width / 2), ACS_VLINE);
+      display_draw_link_vertical($win, -$y, 0);
       display_draw_cell($win, $i, -$y, 0);
       window_draw_cells_horizontal($win, $i, -$y, $left, -1);
       window_draw_cells_horizontal($win, $i, -$y, $right, 1);
@@ -1795,8 +1861,7 @@ sub window_draw_Iraster($$$$$)
     {
       if (!$quad)
       {
-        addch($win, $Window_Ycentre + $y * 2 - 1,
-              $Window_Xcentre + int($Cell_Width / 2), ACS_VLINE);
+        display_draw_link_vertical($win, $y, 0);
         display_draw_cell($win, $j, $y, 0);
         window_draw_cells_horizontal($win, $j, $y, $right, 1);
       }
@@ -1825,13 +1890,12 @@ sub window_draw_Hraster($$$$$)
 
   # Draw up to half a screen each left and right if necessary
   for ($x = 1, $i = $j = $cell;
-       (defined $i || defined $j) && ($x * 2 < $CELLS_PER_WIN); $x++)
+       (defined $i || defined $j) && ($x <= int($Hcells / 2)); $x++)
   {
     # Find the next cell to the left, if any
     if (defined $i && defined ($i = $ZZ{"$i$left"}))
     {
-      addch($win, $Window_Ycentre,
-            $Window_Xcentre - ($x - 1) * $Cell_Width - 1, ACS_HLINE);
+      display_draw_link_horizontal($win, 0, -$x);
       display_draw_cell($win, $i, 0, -$x);
       window_draw_cells_vertical($win, $i, -$x, $up, -1);
       window_draw_cells_vertical($win, $i, -$x, $down, 1);
@@ -1842,54 +1906,11 @@ sub window_draw_Hraster($$$$$)
     {
       if (!$quad)
       {
-        addch($win, $Window_Ycentre,
-              $Window_Xcentre + $x * $Cell_Width - 1, ACS_HLINE);
+        display_draw_link_horizontal($win, 0, $x);
         display_draw_cell($win, $j, 0, $x);
         window_draw_cells_vertical($win, $j, $x, $down, 1);
       }
       window_draw_cells_vertical($win, $j, $x, $up, -1);
-    }
-  }
-}
-
-sub window_draw_cells_horizontal($$$$$$)
-# Draw cells horizontally at row starting at cell
-{
-  my ($win, $cell, $row, $dim, $sign) = @_;
-  my $inc = $sign * $Cell_Width;
-  my $ofs = ($sign == 1) ? $Cell_Width - 1 : -1;
-  my $i = 0;
-
-  # Draw at most half a screen of cells
-  while (defined $cell && ($i++ < int($CELLS_PER_WIN / 2)))
-  {
-    # Find the next cell, if any
-    if (defined ($cell = $ZZ{"$cell$dim"}))
-    {
-      addch($win, $Window_Ycentre + $row * 2,
-            $Window_Xcentre + $ofs, ACS_HLINE);
-      display_draw_cell($win, $cell, $row, $sign * $i);
-      $ofs += $inc;
-    }
-  }
-}
-
-sub window_draw_cells_vertical($$$$$$)
-# Draw cells vertically at col starting at cell
-{
-  my ($win, $cell, $col, $dim, $sign) = @_;
-  my $i = 0;
-
-  # Draw at most half a screen of cells
-  while (defined $cell && ($i++ < int(($LINES + 1) / 4) - 1))
-  {
-    # Find the next cell, if any
-    if (defined ($cell = $ZZ{"$cell$dim"}))
-    {
-      addch($win, $Window_Ycentre + $sign * $i * 2 - $sign,
-            $Window_Xcentre + $col * $Cell_Width + int($Cell_Width / 2),
-            ACS_VLINE);
-      display_draw_cell($win, $cell, $sign * $i, $col);
     }
   }
 }
