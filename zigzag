@@ -1,10 +1,10 @@
 #!/usr/bin/perl -w
 #
-# Xanadu(R) ZigZag(tm) Hyperstructure Kit curses interface, $Revision: 0.66 $
+# Xanadu(R) Zigzag(tm) Hyperstructure Kit curses interface, $Revision: 0.67 $
 #
 # Designed by Ted Nelson
 # Programmed by Andrew Pam ("xanni") and Bek Oberin ("gossamer")
-# Copyright (c) 1997, 1998 Project Xanadu
+# Copyright (c) 1997-1999 Project Xanadu
 #
 # This is only a partial implementation, with only a few structure and view
 # operations; however, they are enough to allow you to create, view and explore
@@ -25,9 +25,12 @@
 # ===================== Change Log
 #
 # Inital zigzag implementation
-# $Id: zigzag,v 0.66 1999/01/07 07:17:26 xanni Exp $
+# $Id: zigzag,v 0.67 1999/03/13 05:03:44 xanni Exp $
 #
 # $Log: zigzag,v $
+# Revision 0.67  1999/03/13 05:03:44  xanni
+# Minor naming fixes, cell_create() moved from Zigzag.pm
+#
 # Revision 0.66  1999/01/07 07:17:26  xanni
 # Implemented display_draw_layout() to replace window_draw_* functions
 #
@@ -57,11 +60,11 @@
 
 use integer;
 use strict;
-use Curses;        # Available at http://www.cpan.org/CPAN.html#curses
+use Curses;        # Available at http://www.cpan.org/modules/by-module/Curses
 use POSIX;
 #require 'sys/ioctl.ph';
 
-use ZigZag;
+use Zigzag;
 
 # Define some aliases for consistency
 *display_clear = *Curses::clear;
@@ -77,8 +80,8 @@ use ZigZag;
 # Use the $TRUE and $FALSE constants instead of "1" and "0"
 
 # Define constants
-#my ($VERSION) = q$Revision: 0.66 $ =~ /([\d\.]+)/;
-my $VERSION = q$Id: zigzag,v 0.66 1999/01/07 07:17:26 xanni Exp $;
+#my ($VERSION) = q$Revision: 0.67 $ =~ /([\d\.]+)/;
+my $VERSION = q$Id: zigzag,v 0.67 1999/03/13 05:03:44 xanni Exp $;
 my $FALSE = 0;
 my $TRUE = !$FALSE;
 my $CELLS_PER_WIN = 5;           # Number of cells displayed across each window
@@ -95,7 +98,7 @@ my @Window_Dirty;                # Flags to indicate windows need redrawing
 my $Status_Dirty;                # Flags to indicate status bar needs redrawing
 #my $Input_Buffer;                # Cell number entered from the keyboard
 my $Display_Resized;             # True when window has been resized
-my $ZigZag_Terminated;           # True when interrupted by a signal
+my $Zigzag_Terminated;           # True when interrupted by a signal
 #my $Command_Count;               # Counts commands between DB syncs
 #my $Hcells;			 # Horizontal cells per window
 #my $Vcells;			 # Vertical cells per window
@@ -188,7 +191,7 @@ my %Keymap =
     meta_key("v")	=> 'display_status_draw(version());',
     "X"			=> 'view_rotate(0, "X");',
     "x"			=> 'view_rotate(1, "X");',
-    "\cX"		=> '$ZigZag_Terminated = "^X";',
+    "\cX"		=> '$Zigzag_Terminated = "^X";',
     meta_key("X")	=> 'view_flip(0, "X");',
     meta_key("x")	=> 'view_flip(1, "X");',
     "Y"			=> 'view_rotate(0, "Y");',
@@ -208,7 +211,7 @@ my %Keymap =
 
 sub version()
 {
-  return "zigzag version $VERSION (ZigZag $ZigZag::VERSION)";
+  return "zigzag version $VERSION (Zigzag $Zigzag::VERSION)";
 }
 
 sub meta_key($)
@@ -226,6 +229,19 @@ sub cursor_jump_input($)
   cursor_jump($_[0], $dest);
   undef $Input_Buffer;
   $Status_Dirty = $TRUE;
+}
+
+sub cell_create($)
+# Create a new cell and optionally edit it
+{
+  my $edit = $_[0];
+  my ($curs, $dir) = input_get_direction();
+  if ($curs)
+  {
+    atcursor_insert($curs, $dir);
+    cursor_move_direction($curs, $dir);
+    atcursor_edit($curs) if $edit;
+  }
 }
 
 sub atcursor_edit($)
@@ -277,9 +293,8 @@ sub atcursor_import(@)
       chomp;
       if ($_)
       {
-        my $new = $ZZ{"n"}++;
         s/\n\|/\n/g;                        # Strip off protective bars
-        $ZZ{$new} = $_;
+        my $new = cell_new($_);
         cell_insert($new, $cell, $dim);
         $cell = $new;
       }
@@ -720,7 +735,7 @@ sub input_process_backspace()
 
 sub catchsig()
 # Handle fatal signals
-{ $ZigZag_Terminated = $_[0]; }
+{ $Zigzag_Terminated = $_[0]; }
 
 sub catchwinch()
 # Handle window size change signals
@@ -785,7 +800,7 @@ sub choose_editor()
   my $e;
   foreach $e (@edlist)
   { return $e if -x $e; }
-  print STDERR "Sorry, ZigZag couldn't locate any usable editor.
+  print STDERR "Sorry, Zigzag couldn't locate any usable editor.
 Please set your EDITOR variable and try again.\n";
   exit 0;
 }
@@ -864,15 +879,15 @@ eval
   }
   display_resize() if $Display_Resized;
 }
-until ($@ || $ZigZag_Terminated);
+until ($@ || $Zigzag_Terminated);
 
 display_clear();
 display_refresh();
 display_close();
 db_close();
 die if $@;
-print STDERR "Terminated by $ZigZag_Terminated signal\n" 
-  if $ZigZag_Terminated;
+print STDERR "Terminated by $Zigzag_Terminated signal\n" 
+  if $Zigzag_Terminated;
 
 #
 # End.
