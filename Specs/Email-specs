@@ -1,0 +1,33 @@
+Zigzag email project specifications and notes
+Copyright (c) 1998 Xanadu
+
+OSMIC cell structure
+--------------------
+
+Outline-parent cell (first left, moving upwards) contains the primedia filename
+Each cell of type "O" contains one or more pointers of the form [x+y] where x
+is a numeric character offset from the start of the primedia and y is a numeric
+character length.
+
+
+Simple export/import format
+---------------------------
+
+The type and contents of each cell along a rank is exported to a text file with
+each cell separated by a line break.  Line breaks within cells are immediately
+followed by a vertical bar.  On import, lines commencing with a vertical bar
+are appended to the current cell with the vertical bar deleted, and cells are
+inserted into a new rank.  Other connections are not preserved in this format.
+
+
+To Do list
+----------
+* Function which scans a named file looking for one or more emails
+  and builds a list of cells containing OSMIC pointers to each email
+* Function which retrieves primedia described by an OSMIC pointer
+  (used to display cell contents for an OSMIC type cell)
+* OSMIC pointer edit operations, initially shorten/lengthen beginning/end
+* Cell contents visualisation, lower right quadrant and full window,
+  view changes bound to the space bar
+* Simple cell export/import functions
+* Implement contain/contain2 dimensions for cell execution and visualisation

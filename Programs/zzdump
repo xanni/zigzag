@@ -1,0 +1,59 @@
+#!/usr/bin/perl -w
+#
+# Database Dump-To-ASCII for Zigzag
+#
+# Programmed by Bek Oberin ("Gossamer")
+# Copyright (c) 1997, 1998 Project Xanadu
+#
+# For more information, visit http://www.xanadu.net/zz/
+#
+# ===================== Change Log
+#
+# $Id: zzdump,v 1.1 1998/06/20 13:25:24 gossamer Exp gossamer $
+#
+# $Log: zzdump,v $
+# Revision 1.1  1998/06/20 13:25:24  gossamer
+# Initial revision
+#
+
+use integer;
+use strict;
+use DB_File;
+use Fcntl;
+
+use Data::Dumper;
+
+# Note: We are using the following naming convention:
+# Constants are named in ALLCAPS
+# Global variables are named with Initial Caps
+# Local variables and functions are named in lowercase
+# Function calls to functions defined in this file all start with & except
+#    the Curses ones.
+# Put brackets around all function arguments.
+
+# Define constants
+my $FILENAME = "zigzag.zz";    # Default filename for initial slice
+
+#
+# Main
+#
+
+my %ZZ;
+
+$Data::Dumper::Indent = 2;  # NB  Make this an option, set to 0 if -t?
+$Data::Dumper::Purity = 1;
+
+my $Filename = shift || $FILENAME;
+tie(%ZZ, 'DB_File', $Filename, O_RDONLY) ||
+   die "Can't open \"$Filename\": $!\n";
+
+my $d = Data::Dumper->new([\%ZZ], [qw(*ZZ)]);
+$d->Purity(1)->Terse(1)->Deepcopy(1);
+print $d->Dump;
+
+#print Data::Dumper->Dump([\%ZZ], [qw(*ZZdump)]);
+#print Data::Dumper->Dump([\%ZZ]);
+
+#
+# End.
+#

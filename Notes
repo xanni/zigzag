@@ -1,0 +1,12 @@
+Implementing separate dimension lists for each axis of each cursor (as
+clones of the master dimension list) would eliminate the need to check
+whether the currently visible dimension still exists during view_rotate()
+and would also make it possible to hide even essential dimensions.
+
+slice_upgrade() would have to be enhanced to check that each axis is a
+loop and create the clones of the master dimension list if not.  It should
+also check if the master dimension list is a loop and fix it if not.
+Or maybe the routines that rely on this (eg deletion) should fix it?
+
+It must not be legal to make or break any links +d.1 from anywhere in the
+rank $CURSOR_HOME+d.2 because this is how the dimension lists are found.

@@ -1,0 +1,81 @@
+Initial zigzag specifications and notes
+$Id: specs,v 1.10 1998/02/27 17:38:47 xanni Exp xanni $
+Created 1997/04/23 by Andrew Pam from notes by Ted Nelson
+Copyright (c) 1997-98 Xanadu
+
+
+Initial display visualisation
+-----------------------------
+Two windows (nominally side by side halves of the text screen).
+Highlighted cursors visible at the centre of each window.
+Left window represents action, right window represents data.
+Each cell is initially represented as the first few chars of the content.
+Later representations will include the cell number and will be implemented
+as code within a progcell at -D1.
+Refresh sequences: RLUD (X first) or UDRL (Y first)
+Customisable table of key mappings, initially including:
+s = data window back in dimension X
+f = data window fwd in dimension X
+e = data window back in dimension Y
+c = data window fwd in dimension Y
+SFEC = Mark cell
+Meta-sfec = Hop
+Shift-Meta-sfec = Shear
+Ctrl-Meta-sfec = Chug
+d = data window fwd in dimension Z
+D = data window back in dimension Z
+Meta-d = enter (edit) data cell
+Shift-Meta-d = terminate editing
+j = action window back in dimension X
+l = action window fwd in dimension X
+i = action window back in dimension Y
+, = action window fwd in dimension Y
+JLI< = Mark cell
+Meta-jli, = Hop
+Shift-Meta-jli, = Shear
+Ctrl-Meta-jli, = Chug
+k = action window fwd in dimension Z
+K = action window back in dimension Z
+Meta-k = enter (edit) action cell
+Shift-Meta-k = terminate editing
+Enter = execute current action cell (if executable)
+some keys will also map to NEW CELL and DELETE CELL operations.
+
+Internal data representation
+----------------------------
+Cells are identified by a unique label not including the characters "+" and "-"
+New cells are assigned unique and monotonically increasing integers
+Array of cell contents (possibly empty)
+Associative array of links indexed by cell, direction (+ or -) and dimension
+There is an extensible list of link dimensions, including:
+* D1 & D2 (equivalent to page X & Y)
+* Clone
+* Contain & embrace
+* Cursor
+* Mark
+Associative array of cell properties, including an
+array of cell types from an extensible list including:
+* text
+* cursor
+* misc
+* vink/damcell
+* progcell
+
+Initial geography
+-----------------
+Cell 0 (home cell)
+Cursor home cell, last cell -D1 from 0
+Data cursor, Cursor home cell +D2, initially on 0 (linked in Cursor dimension)
+Action cursor, Cursor home +2D2, initially on 0 (linked in Cursor dimension)
+Operations linked along D2 including:
+* Enter (edit) cell
+* New cell in some direction along a dimension (X,Y,Z)
+* Delete cell (removes all links and relinks to deleted area <D2 from 0) 
+* Mark
+* Hop = move marked cells in some direction
+* Shear = move marked cells in some direction along neighboring rank (which?)
+* Chug = move marked cells in some direction along both neighoring ranks
+* Toggle refresh sequence
+* Create new cursor (window) in some direction, shrinking existing windows
+* Delete cursor (window), expanding remaining windows
+

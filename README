@@ -1,0 +1,30 @@
+
+Portability notes:
+- At the moment none of this is done as object-oriented but it's
+deliberately coded so that converting it to OO should be fairly
+trivial.  Eventually this WILL be done but Xanni wants it to wait
+until after at least the first stable release.
+
+- The display_* (physical screen) and draw_* (logical screens)
+functions are the ONLY ones that deal with display (the view_* modules
+are more abstract as the raster/spin/flip ideas are relavent to all
+displays so we don't include those).  Eventually we should modularize
+them so we can pull them out and 'slot' another module in for a
+completely different look.  The 'interface' between the display/window
+functions and the rest of the program is via these functions only:
+   display_open()
+   display_close()
+   display_resize()
+   display_refresh()
+   display_clear()
+   draw()
+   draw_status()   (NB: Not yet implemented)
+None of the other display_* or draw_* functions should be called
+from elsewhere in the program.
+
+- The input_* functions should similarly be separated as alternative
+input methods (eg: mouse) will then be easy to slot in.  Interface
+functions are:
+   input_get_any()        (polls for input, returns undef if no keys waiting)
+   input_get_direction()  (waits until it gets a valid direction keystroke)
+

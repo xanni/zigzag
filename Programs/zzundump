@@ -1,0 +1,50 @@
+#!/usr/bin/perl -w
+#
+# ASCII Dump to Database for ZigZag
+#
+# Programmed by Bek Oberin ("Gossamer")
+# Copyright (c) 1997, 1998 Project Xanadu
+#
+# For more information, visit http://www.xanadu.net/zz/
+#
+# ===================== Change Log
+#
+# $Id: zzundump,v 1.1 1998/06/20 13:25:24 gossamer Exp gossamer $
+#
+# $Log: zzundump,v $
+# Revision 1.1  1998/06/20 13:25:24  gossamer
+# Initial revision
+#
+
+use integer;
+use strict;
+use DB_File;
+use Fcntl;
+
+use Data::Dumper;
+
+# Define constants
+my $FILENAME = "zigzag.zz";    # Default filename for initial slice
+
+#
+# Main
+#
+
+my %ZZ;
+
+# open the DB file
+my $Filename = shift || $FILENAME;
+if (-e $Filename) {
+   # XXX unless -f force
+   warn "Error: database \"$Filename\" already exists.";
+   exit;
+}
+tie %ZZ, 'DB_File', $Filename, O_CREAT | O_RDWR || 
+   die "Can't open \"$Filename\": $!\n";
+
+undef $/;
+%ZZ = eval <>;
+
+#
+# End.
+#

@@ -1,0 +1,8 @@
+# Note: We are using the following coding conventions:
+# Constants are named in ALLCAPS
+# Global variables are named with Initial Caps
+# Local variables and functions are named in lowercase
+# Put brackets around all function arguments
+# Prototype the number and type of arguments expected by functions
+# Matching braces should line up with each other vertically
+# Use the $TRUE and $FALSE constants instead of "1" and "0"

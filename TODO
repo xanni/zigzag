@@ -1,0 +1,95 @@
+#
+# ZigZag To Do List
+#
+# Last updated by xanni on 14 May 1999
+#
+
+
+# HIGH priority
+
+- Marking an already-marked cell should unmark it
+
+* Check for people deleting the cursor (This will need to be modified
+if we allow more cursors?) (also, discuss how)
+
+- Fix perl Curses window resize bug
+
+- Implement export and import with cell connections (requires mark)
+
+* Implement mark
+* Implement mark groups
+
+- Implement shear and chug
+
+- Implement undelete (save links when deleting, dispose after other changes)
+
+- Port to Perl32 (using Win32::Console module?)
+
+- Put errors from cell execution in another cell linked along Error
+dim
+
+- Redesign to lessen the number of "magic"/hardcoded links and cell
+numbers (probably need to discuss how)
+
+* Options should be stored in (named) cells
+
+- ^L and ^R should refresh screen
+
+* Cell-fills-window view
+
+
+# MEDIUM priority
+
+* "Bookmarks" = saved cursors
+
+- Add dimension which links all cells?  Or change to btree implementation?
+
+- Execute-cell to use #! notation?  (Xanni?  Ted's gonna hate this,
+isn't he?) (NB:  This won't work for windoze unless we parse it
+ourselves, I suspect?)
+
+- Implement HTTP server interface which provides HTML representation
+
+- Implement export marked cells to Table or Outline format (probably HTML)
+
+- Implement general multiple key sequences
+
+- Implement general undo
+
+- Implement multiple slices
+
+- Implement delete dimension (all links)
+
+- Move keymap into cells
+
+- Move program code into cells (initialisation progcells with sub defs)
+
+- Implement variable sized cell presentation
+
+- Write database checking and repair utility (can be done by hand
+using zzdump/zzundump)
+
+* Vertically split windows
+
+
+# LOW priority
+- Implement "E view"
+- Implement "floating head cells" (negmost cell remains at edge of window)
+- Implement assemble (join together cells in a rank) and split cell into rank
+- Implement colour for dimensions
+- Implement create & delete cursor (window)
+- Implement separate dimension lists (different sequences) for each window
+
+
+# OTHER
+# (This stuff will be done when the whole thing is re-written in
+# object-oriented style becuase it's easy to do together with that and
+# hard to do without it.
+- Implement cell creation date as property (later add modified and visited?)
+
+- Implement cell type as property
+
+- Implement naming cells (aliasing)
+
+- Implement other media types besides text
+

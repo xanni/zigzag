@@ -1,0 +1,249 @@
+# ===================== Change Log
+#
+# Inital zigzag implementation
+#
+# Revision 0.59  1998/11/21 05:36:19  xanni
+# Separated curses-specific globals, renamed $Cursor_Len to $Cell_Width,
+# created $Window_Xcentre and $Window_Ycentre, modified all row and
+# column parameters to be (UI-toolkit independent) grid rows and columns
+# instead of character-cell positions.
+#
+# Revision 0.58  1998/11/21 02:59:23  xanni
+# Renamed UI toolkit specific functions to start with display_
+# Minor updates to status bar code (defined $STATUS_DELAY, moved
+# $StatusTimer setting into display_status_draw function)
+#
+# Revision 0.57  1998/11/18 14:21:34  xanni
+# Incorporated megapatch from Mark-Jason Dominus which implements multiple
+# selections and the shear operation.  Replaced atrocious get_links_from()
+# with get_links_to() plus substantial miscellaneous cleanup (formatting,
+# spelling, docs and code).  Renamed cells_import() and cells_export() to
+# atcursor_import() and atcursor_export() respectively.
+#
+# Revision 0.56  1998/11/18 09:16:42  xanni
+# Changed function call syntax (removed ampersands) and incorporated
+# bug fixes from Mark-Jason Dominus <mjd@plover.com>
+#
+# Revision 0.55  1998/10/26 05:37:32  xanni
+# Changed default file extension and incorporated $EDITOR selection patch
+# from Mark-Jason Dominus <mjd@plover.com>
+#
+# Revision 0.54  1998/10/08 03:56:21  xanni
+# Incorporated Gossamer's changes, fixed $TEMP_FILE problem
+#
+# Revision 0.53.0.1  1998/09/07 11:05:54  gossamer
+# Added 'm' to show marked cells, like 'c' for clone
+# Added status bar update when marking cells
+# Added dimension_exists() and dimension_is_essential()
+#
+# Revision 0.53  1998/08/31 22:17:33  xanni
+# Code cleanup, implemented view_reset()
+#
+# Revision 0.52  1998/08/29 19:19:43  xanni
+# Fixed status line bugs
+#
+# Revision 0.51  1998/08/28 21:57:18  xanni
+# Various minor bugfixes and additions:
+# - Fixed File::Copy problem and reinstated backup
+# - Fixed version() and atcursor_mark()
+# - Added uppercase movement keys, redraw and exit keys
+# - Added new menu cells for clone, quad view toggle, rotate and flip
+#
+# Revision 0.50  1998/08/19 21:40:43  xanni
+# Temporarily disabled backup due to problems with File::Copy module
+#
+# Revision 0.49.0.8  1998/07/12 17:02:01  gossamer
+# Fixed bugs with clone insertion, and error-trapping
+#
+# Revision 0.49.0.7  1998/07/05 02:12:15  gossamer
+# Statusbar now optional and off by default
+#
+# Revision 0.49.0.6  1998/07/04 13:53:28  gossamer
+# Added backup of initial data file, fixed syncing before
+# external operations.
+#
+# Revision 0.49.0.5  1998/06/21 06:14:41  gossamer
+# Began to implement mark
+#
+# Revision 0.49.0.4  1998/05/28 10:09:05  gossamer
+# Added DB syncing after x commands and before all external ops
+#
+# Revision 0.49.0.3  1998/05/28 09:57:45  gossamer
+# Fixed duration of status bar messages.
+#
+# Revision 0.49.0.2  1998/05/19 23:32:01  gossamer
+# Renamed d.containment and d.contentlist to d.inside and d.contents
+#
+# Revision 0.49.0.1  1998/05/19 23:06:21  gossamer
+# Constrained cell insertion in clone dimension, user_error copes
+# with empty text messages.
+#
+# Revision 0.49  1998/04/11 16:50:46  xanni
+# Implemented preliminary ZZmail support
+#
+# Revision 0.48  1998/04/11 15:20:01  xanni
+# Reinstated $TRUE and $FALSE, improved error handling, fixed minor bugs
+#
+# Revision 0.47  1998/04/11 10:43:23  xanni
+# Renamed d.contain to d.containment, generalised quadrant view
+#
+# Revision 0.46  1998/04/11 10:08:49  xanni
+# Merged latest changes, renamed dimensions again
+#
+# Revision 0.45.0.2  1998/04/05 12:24:22  gossamer
+# Made yellow-all-the-time optional for clones.
+#
+# Revision 0.45.0.1  1998/04/02 03:36:47  gossamer
+# Status bar and better error reporting
+#
+# Revision 0.45  1998/03/18 03:28:28  xanni
+# Fixed new dimension names, merged changes
+#
+# Revision 0.44.1.1  1998/03/13 03:36:27  gossamer
+# Debugged, changed dimension names.
+#
+# Revision 0.44.1.0  1998/03/11 01:37:35  gossamer
+# Renamed most functions to enhance readabililty and modularity
+#
+# Revision 0.44.0.1  1998/03/08 02:42:49  gossamer
+# Rearranged things to make modularization more clear
+# Added a few helper functions
+#
+# Revision 0.44  1998/03/05 06:35:06  xanni
+# Merge colour changes with main branch
+#
+# Revision 0.43.0.1  1998/03/04 22:45:52  gossamer
+# Cursor and clone colours added.  Dimension guide made smaller.
+#
+# Revision 0.43  1998/03/04 02:43:34  xanni
+# Fixed containment bugs
+#
+# Revision 0.42  1998/03/02 15:31:28  xanni
+# Implemented wordwrap and containment (display, execute and export)
+#
+# Revision 0.41  1998/02/27 17:35:37  xanni
+# Changed initial dimensions to d.1-3, minor bugfixes and cleanup
+#
+# Revision 0.40  1998/02/25 20:59:52  xanni
+# Removed cell types (redo as part of an attribute list later)
+#
+# Revision 0.39  1998/02/25 12:10:20  xanni
+# Implemented simple import and export of ranks
+#
+# Revision 0.38  1998/02/25 03:41:14  xanni
+# Moved old changelog to CHANGES, implemented Clone flag, fixed deletion
+#
+# Revision 0.37  1998/02/24 19:03:01  xanni
+# Implemented direction-key command sequences (break, new and hop)
+#
+# Revision 0.36  1998/02/23 16:22:45  xanni
+# Cleaned up lower right quadrant enlarged cell view and fixed clone bug
+#
+# Revision 0.35  1998/02/21 16:23:31  xanni
+# Implemented lower right quadrant enlarged cell view
+#
+# Revision 0.34  1998/02/21 07:42:31  xanni
+# Rewrote structure operations using link_break() and link_make()
+#
+# Revision 0.33  1998/02/21 06:49:31  xanni
+# Cleaned up get_dimension() calls
+#
+# Revision 0.32  1998/02/21 05:55:19  xanni
+# Added distribution comments, moved delete stack to fixed cell ("Midden")
+#
+# Revision 0.31  1997/11/24 12:18:18  xanni
+# Reimplemented clone, swapped cursor highlighting, changed key bindings
+#
+# Revision 0.30  1997/11/20 12:47:21  xanni
+# Implemented arbitrary dimensions and flip, considerably tightened code
+#
+# Revision 0.29  1997/11/18 11:47:41  xanni
+# Add dimension list, rename transclude to clone and fix bug
+#
+# Revision 0.28  1997/11/16 04:49:40  xanni
+# Implemented full 360 degree rotation
+#
+# Revision 0.27  1997/11/16 04:00:37  xanni
+# Implemented dimension guide and rotate
+#
+# Revision 0.26  1997/11/15 12:13:08  xanni
+# Implemented hop, added whitespace to improve readability
+#
+# Revision 0.25  1997/11/15 01:29:26  xanni
+# Changed show all cursors from option to standard, implemented transclusion
+#
+# Revision 0.24  1997/10/19 08:57:27  xanni
+# Changed hash initialisation syntax and improved error checking
+#
+# Revision 0.23  1997/10/12 16:47:08  xanni
+# Added single error handler and many more comments
+#
+# Revision 0.22  1997/10/12 15:40:27  xanni
+# Implemented change cell type and option to show all cursors in all windows
+#
+# Revision 0.21  1997/10/12 11:34:56  xanni
+# Implemented break link, minor bugfixes
+#
+# Revision 0.20  1997/10/12 10:34:49  xanni
+# Implemented make link, added new keymappings, fixed many subtle bugs
+#
+# Revision 0.19  1997/10/12 08:01:18  xanni
+# Implemented numeric input and jump cursor to specified cell
+#
+# Revision 0.18  1997/09/03 23:24:29  xanni
+# Implemented display of current cell number
+#
+# Revision 0.17  1997/09/03 22:52:46  xanni
+# Implemented delete function, removed makelink (subsumed by insert)
+#
+# Revision 0.16  1997/09/03 09:31:59  xanni
+# Implemented persistent storage
+#
+# Revision 0.15  1997/09/03 07:57:03  xanni
+# Moved initial links into %ZZ initialisation vector, minor bugfixes
+#
+# Revision 0.14  1997/09/01 21:07:10  xanni
+# Merged @Cell and %Link into a single %ZZ hash
+#
+# Revision 0.13  1997/09/01 18:50:42  xanni
+# Cell types reimplemented as first character of cell contents
+#
+# Revision 0.12  1997/08/10 21:29:58  xanni
+# Swapped action and data windows, implemented "H" refresh raster
+#
+# Revision 0.11  1997/08/10 01:12:48  xanni
+# Implemented execute and insert functions
+#
+# Revision 0.10  1997/08/07 22:43:16  xanni
+# Added editing of cell contents with an external editor
+#
+# Revision 0.9  1997/07/06 16:33:34  xanni
+# Generalised to any number of cursors, cleaned up code
+#
+# Revision 0.8  1997/07/05 20:42:09  xanni
+# Rewrote all display code to use separate windows
+#
+# Revision 0.7  1997/07/05 17:19:40  xanni
+# Added keyboard input and cursor movement
+#
+# Revision 0.6  1997/04/25 19:46:24  xanni
+# Rewrote redraw sequence to show links between cells
+#
+# Revision 0.5  1997/04/24 15:06:04  xanni
+# Implemented horizontal redraw sequence for data and action windows
+#
+# Revision 0.4  1997/04/24 10:16:33  xanni
+# Added function prototypes, implemented makelink(), expanded initial geography
+#
+# Revision 0.3  1997/04/24 07:07:57  xanni
+# Added use strict pragma, zigzag data structures and initial geography
+#
+# Revision 0.2  1997/04/23 16:01:24  xanni
+# Added display cursors
+#
+# Revision 0.1  1997/04/23 14:46:14  xanni
+# Commenced using RCS
+#
+# Revision 0.0  1997/04/23 14:35:37  xanni
+# Created by Andrew Pam
+#

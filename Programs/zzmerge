@@ -1,0 +1,180 @@
+#!/usr/bin/perl -w
+#
+# Merge two Zigzag data files
+#
+# Programmed 23 Mar 1999 by Andrew Pam ("Xanni")
+# Copyright (c) 1999 Project Xanadu
+#
+# For more information, visit http://www.xanadu.net/zz/
+#
+
+use integer;
+use strict;
+use DB_File;
+use File::Copy;
+
+# Note: We are using the following naming convention:
+# Constants are named in ALLCAPS
+# Global variables are named with Initial Caps
+# Local variables and functions are named in lowercase
+# Function calls to functions defined in this file all start with & except
+#    the Curses ones.
+# Put brackets around all function arguments.
+
+# Define constants
+my $FALSE = 0;
+my $TRUE = !$FALSE;
+my $CURSOR_HOME = 10;            # NOTE!  This assumes it stays fixed!
+my $DELETE_HOME = 99;            # NOTE!  This assumes it stays fixed!
+my $FIRST_CELL = $DELETE_HOME + 1;	# NOTE!  This is an assumption!
+my $BACKUP_FILE_SUFFIX = ".bak";
+
+#
+# Main
+#
+
+my (%ZZ1, %ZZ2);
+die "Usage: zzmerge <file1> <file2>\n" unless $#ARGV == 1;
+my $Filename1 = $ARGV[0];
+die "\"$Filename1\" doesn't exist\n" unless -e $Filename1;
+my $Filename2 = $ARGV[1];
+die "\"$Filename2\" doesn't exist\n" unless -e $Filename2;
+
+# Backup data files
+move($Filename1, $Filename1 . $BACKUP_FILE_SUFFIX)
+  or die "Can't rename data file \"$Filename1\": $!\n";
+copy($Filename1 . $BACKUP_FILE_SUFFIX, $Filename1)
+  or die "Can't copy data file \"$Filename1\": $!\n";
+move($Filename2, $Filename2 . $BACKUP_FILE_SUFFIX)
+  or die "Can't rename data file \"$Filename2\": $!\n";
+copy($Filename2 . $BACKUP_FILE_SUFFIX, $Filename2)
+  or die "Can't copy data file \"$Filename2\": $!\n";
+
+# Open data files
+my $DB_Ref1 = tie %ZZ1, 'DB_File', $Filename1, O_RDWR
+  or die "Can't open data file \"$Filename1\": $!\n";
+my $DB_Ref2 = tie %ZZ2, 'DB_File', $Filename2, O_RDWR
+  or die "Can't open data file \"$Filename2\": $!\n";
+
+# Delete recycled cells in data file 2
+my $cell = $ZZ2{"$DELETE_HOME+d.2"};
+while (defined $cell and ($cell != $DELETE_HOME))
+{
+  my $next = $ZZ2{"$cell+d.2"};
+  delete($ZZ2{"$cell-d.2"});
+  delete($ZZ2{"$cell+d.2"});
+  delete($ZZ2{$cell});
+  $cell = $next;
+}
+$ZZ2{"$DELETE_HOME-d.2"} = $DELETE_HOME;
+$ZZ2{"$DELETE_HOME+d.2"} = $DELETE_HOME;
+
+# Build a hash of dimensions in data file 1
+my %dim;
+my $start = $ZZ1{"$CURSOR_HOME+d.1"};
+$cell = $start;
+do
+{
+  $cell = $ZZ1{"$cell+d.2"};
+  die "Dimension list broken!" unless defined $cell;
+  $dim{$ZZ1{$cell}} = $TRUE;
+} until $cell == $start;
+
+# Copy dimensions from data file 2 to data file 1
+$start = $ZZ2{"$CURSOR_HOME+d.1"};
+do
+{
+  $cell = $ZZ2{"$cell+d.2"};
+  die "Dimension list broken!" unless defined $cell;
+  if (not defined $dim{$ZZ2{$cell}})
+  {
+    my $next = $ZZ1{"$CURSOR_HOME+d.1"};
+    my $prev = $ZZ1{"$next-d.2"};
+    my $new = $ZZ1{"n"}++;
+    $ZZ1{$new} = $ZZ2{$cell};
+    $ZZ1{"$new-d.2"} = $prev;
+    $ZZ1{"$prev+d.2"} = $new;
+    $ZZ1{"$new+d.2"} = $next;
+    $ZZ1{"$next-d.2"} = $new;
+  }
+} until $cell == $start;
+
+# Copy home cell from data file 2 to data file 1
+my $HOME2 = $ZZ1{"n"}++;
+$ZZ1{$HOME2} = $ZZ2{0};
+
+# Cell numbering offset
+my $offset = $ZZ1{"n"} - $FIRST_CELL;
+
+# Copy all (non-system) cells from data file 2 to data file 1
+while (my ($key, $value) = each %ZZ2)
+{
+  if ($key =~ /^\d+$/)
+  { $ZZ1{$key + $offset} = $value if ($key >= $FIRST_CELL); }
+  elsif (($key ne "n") and (($value == 0) or ($value >= $FIRST_CELL)) and
+         defined $ZZ2{$value})
+  {
+    # Must be a link
+    $key =~ /^(\d+)(.+)$/;
+    $cell = $1;
+    my $dir = $2;
+    if ($value == 0)
+    { $value = $HOME2; }
+    else
+    { $value += $offset; }
+    if ($cell == 0)
+    { $cell = $HOME2; $ZZ1{"$cell$dir"} = $value; }
+    elsif (($cell >= $FIRST_CELL) and defined $ZZ2{$cell})
+    { $cell += $offset; $ZZ1{"$cell$dir"} = $value; }
+  }
+}
+
+# Increment new cell counter
+$ZZ1{"n"} += $ZZ2{"n"} - $FIRST_CELL;
+
+# Place cursors on home cells
+my $CURSOR_DIM = "d.cursor";
+$CURSOR_DIM = "d.Cursor" if defined $ZZ1{"$CURSOR_HOME-d.Cursor"};
+$cell = $ZZ1{"$CURSOR_HOME+d.2"};
+my $prev = $ZZ1{"$cell-$CURSOR_DIM"};
+my $next = $ZZ1{"$cell+$CURSOR_DIM"};
+if (defined $next)
+{
+  $ZZ1{"$prev+$CURSOR_DIM"} = $next;
+  $ZZ1{"$next-$CURSOR_DIM"} = $prev;
+  delete($ZZ1{"$cell+$CURSOR_DIM"});
+}
+else
+{ delete($ZZ1{"$prev+$CURSOR_DIM"}); }
+$next = $ZZ1{"0+$CURSOR_DIM"};
+$ZZ1{"0+$CURSOR_DIM"} = $cell;
+$ZZ1{"$cell-$CURSOR_DIM"} = 0;
+if (defined $next)
+{ $ZZ1{"$cell+$CURSOR_DIM"} = $next; $ZZ1{"$next-$CURSOR_DIM"} = $cell; }
+
+$cell = $ZZ1{"$cell+d.2"};
+$prev = $ZZ1{"$cell-$CURSOR_DIM"};
+$next = $ZZ1{"$cell+$CURSOR_DIM"};
+if (defined $next)
+{
+  $ZZ1{"$prev+$CURSOR_DIM"} = $next;
+  $ZZ1{"$next-$CURSOR_DIM"} = $prev;
+  delete($ZZ1{"$cell+$CURSOR_DIM"});
+}
+else
+{ delete($ZZ1{"$prev+$CURSOR_DIM"}); }
+$next = $ZZ1{"$HOME2+$CURSOR_DIM"};
+$ZZ1{"$HOME2+$CURSOR_DIM"} = $cell;
+$ZZ1{"$cell-$CURSOR_DIM"} = $HOME2;
+if (defined $next)
+{ $ZZ1{"$cell+$CURSOR_DIM"} = $next; $ZZ1{"$next-$CURSOR_DIM"} = $cell; }
+
+# Close data files
+undef $DB_Ref1;	# So untie doesn't complain
+undef $DB_Ref2;	# So untie doesn't complain
+untie %ZZ1;
+untie %ZZ2;
+
+# Unlink data file 2
+unlink($Filename2);
+
