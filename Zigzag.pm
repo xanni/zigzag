@@ -1,4 +1,4 @@
-# Xanadu(R) Zigzag(tm) Hyperstructure Kit, $Revision: 0.68 $
+# Xanadu(R) Zigzag(tm) Hyperstructure Kit, $Revision: 0.69 $
 #
 # Designed by Ted Nelson
 # Programmed by Andrew Pam ("xanni") and Bek Oberin ("gossamer")
@@ -29,9 +29,12 @@
 # ===================== Change Log
 #
 # Inital Zigzag implementation
-# $Id: Zigzag.pm,v 0.68 1999/03/13 13:05:04 xanni Exp $
+# $Id: Zigzag.pm,v 0.69 1999/05/09 12:19:53 xanni Exp $
 #
 # $Log: Zigzag.pm,v $
+# Revision 0.69  1999/05/09 12:19:53  xanni
+# Fixed view_rotate() to handle hidden dimensions, rewrote get_contained()
+#
 # Revision 0.68  1999/03/13 13:05:04  xanni
 # Implemented is_essential(), cell_find() and dimension_rename()
 # Implemented dimension_find() to replace dimension_exists()
@@ -152,8 +155,8 @@ use File::Copy;
 
 # Define constants
 use vars qw($VERSION);
-#($VERSION) = q$Revision: 0.68 $ =~ /([\d\.]+)/;
-$VERSION = do { my @r = (q$Revision: 0.68 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r }; # must be all one line, for MakeMaker
+#($VERSION) = q$Revision: 0.69 $ =~ /([\d\.]+)/;
+$VERSION = do { my @r = (q$Revision: 0.69 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r }; # must be all one line, for MakeMaker
 my $FALSE = 0;
 my $TRUE = !$FALSE;
 my $CURSOR_HOME = 10;            # NOTE!  This assumes it stays fixed!
@@ -681,71 +684,37 @@ sub get_dimension($$)
   { return $ZZ{$curs}; }
 }
 
+sub add_contents($$$)
+# Add list of cells "contained" within a cell to a referenced list and hash
+{
+  my ($start, $listref, $hashref) = @_;
+  push @$listref, $start;
+  $hashref->{$start} = $TRUE;
+
+  my $cell = $ZZ{"$start+d.inside"};
+  while (defined $cell and not defined $hashref->{$cell})
+  {
+    push @$listref, $cell;
+    $hashref->{$cell} = $TRUE;
+
+    my $index = $ZZ{"$cell+d.contents"};
+    while (defined $index and not defined $hashref->{$index})
+    {
+      add_contents($index, $listref, $hashref);
+      $index = $ZZ{"$index+d.contents"};
+    }
+
+    $cell = $ZZ{"$cell+d.inside"};
+  }
+}
+
 sub get_contained($)
 # Return list of cells "contained" within a cell
-# Performs a depth-first descend-only treewalk with loops broken
-# +d.inside is depth, +d.contents is width.
-# Sadly, this is broken because d.inside and d.contents
-# aren't actually meant to have the same semantics!
 {
-  my %gen;
-  my @stack;
-  my $cell = $_[0];
-  my $gen = 0;
-  my ($index, $next, $start);
-
-  $start = get_lastcell($cell, "-d.contents");
-  # If d.contents is not linked or is a loop, just use $cell
-  $start = $cell if !defined($start) || defined($ZZ{"$start-d.contents"});
-
-  # Mark the first generation
-  $index = $start;
-  do
-  {
-    $gen{$index} = 0;
-    $index = $ZZ{"$index+d.contents"};
-  }
-  until (!defined($index) || ($index eq $start));
-
-  undef @_;
-  while (defined($cell))
-  {
-    push @_, $cell;
-
-    if (($next = $ZZ{"$cell+d.inside"}) && 
-        (!defined($gen{$next}) || ($gen{$next} > $gen)))
-    {
-      push @stack, $cell, $start;
-
-      $start = get_lastcell($next, "-d.contents");
-      # If d.contents is not linked or is a loop, just use $next
-      $start = $next if !defined($start) || defined($ZZ{"$start-d.contents"});
-
-      # Mark the new generation
-      $gen++;
-      $index = $start;
-      do
-      {
-        $gen{$index} = $gen;
-        $index = $ZZ{"$index+d.contents"};
-      }
-      until (!defined($index) || ($index eq $start));
-
-      $cell = $start;
-    }
-    else # Can't go +d.inside, so find somewhere to go +d.contents
-    {
-      while (defined($cell) &&
-             ((!defined($cell = $ZZ{"$cell+d.contents"})) ||
-              ($cell eq $start)))
-      {
-        $start = pop @stack;
-        $cell = pop @stack;
-      }
-      $gen = $gen{$cell} if defined($cell);
-    }
-  }
-  return @_;
+  my @list;
+  my %hash;
+  add_contents($_[0], \@list, \%hash);
+  return @list;
 }
 
 sub get_links_to($)
@@ -1572,9 +1541,14 @@ sub view_rotate($$)
   $curs = $ZZ{"$curs+d.1"} if $axis ne "X";
   $curs = $ZZ{"$curs+d.1"} if $axis eq "Z";
   my $dim = substr($ZZ{$curs}, 1);
-  my $index = cell_find($ZZ{"$CURSOR_HOME+d.1"}, "+d.2", $dim);
-  die "Dimension $dim not found" unless $index;
-  $ZZ{$curs} = substr($ZZ{$curs}, 0, 1) . $ZZ{$ZZ{"$index+d.2"}};
+  my $dhome = $ZZ{"$CURSOR_HOME+d.1"}; # Dimension list is +d.1 from Cursor home
+  my $index = cell_find($dhome, "+d.2", $dim);
+
+  if ($index)
+  { $index = $ZZ{"$index+d.2"}; }
+  else
+  { $index = $dhome; }
+  $ZZ{$curs} = substr($ZZ{$curs}, 0, 1) . $ZZ{$index};
   display_dirty();
 }
 
@@ -1593,5 +1567,5 @@ sub view_flip($$)
 
 $TRUE;
 #
-# End of ZZ.pl
+# End of Zigzag.pm
 #
