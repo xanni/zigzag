@@ -1,4 +1,4 @@
-# Xanadu(R) Zigzag(tm) Hyperstructure Kit, $Revision: 0.69 $
+# Xanadu(R) Zigzag(tm) Hyperstructure Kit, $Revision: 0.70 $
 #
 # Designed by Ted Nelson
 # Programmed by Andrew Pam ("xanni") and Bek Oberin ("gossamer")
@@ -29,9 +29,20 @@
 # ===================== Change Log
 #
 # Inital Zigzag implementation
-# $Id: Zigzag.pm,v 0.69 1999/05/09 12:19:53 xanni Exp $
+# $Id: Zigzag.pm,v 0.70 1999/05/14 13:43:21 xanni Exp $
 #
 # $Log: Zigzag.pm,v $
+# Revision 0.70  1999/05/14 13:43:21  xanni
+# * Imported atcursor_edit from front end
+# * Implemented dimension_home()
+# * Minor fix to add_contents()
+# * Replaced $DB_Ref and %ZZ globals with @Filename, @DB_Ref and @Hash_Ref
+# * Implemented cell_slice()
+# * Replaced direct access to %ZZ with cell_get(), cell_set() and cell_nbr()
+# * Replaced db_open(), db_close() and db_sync() with
+#   slice_open(), slice_close(), slice_close_all() and slice_sync_all()
+# * Renamed db_upgrade() to slice_upgrade()
+#
 # Revision 0.69  1999/05/09 12:19:53  xanni
 # Fixed view_rotate() to handle hidden dimensions, rewrote get_contained()
 #
@@ -79,10 +90,11 @@ use Exporter;
 @ISA = qw(Exporter);
 @EXPORT = qw
   (
-    %ZZ $Command_Count $Hcells $Vcells $Input_Buffer
-    db_open
-    db_close
-    db_sync
+    $Command_Count $Hcells $Vcells $Input_Buffer
+    slice_open
+    slice_close
+    slice_close_all
+    slice_sync_all
     reverse_sign
     wordbreak
     is_cursor
@@ -102,6 +114,9 @@ use Exporter;
     get_contained
     get_links_to
     do_shear
+    cell_get
+    cell_set
+    cell_nbr
     cell_insert
     cell_new
     cursor_move_dimension
@@ -130,7 +145,7 @@ use Exporter;
     view_flip
   );
 @EXPORT_OK = qw(link_make link_break is_essential cell_excise cell_find
-		dimension_find dimension_is_essential);
+		dimension_find dimension_home dimension_is_essential);
 
 use integer;
 use strict;
@@ -140,6 +155,7 @@ use DB_File;
 use File::Copy;
 
 # Import functions
+*atcursor_edit = *::atcursor_edit;
 *display_dirty = *::display_dirty;
 *display_status_draw = *::display_status_draw;
 *user_error = *::user_error;
@@ -155,25 +171,26 @@ use File::Copy;
 
 # Define constants
 use vars qw($VERSION);
-#($VERSION) = q$Revision: 0.69 $ =~ /([\d\.]+)/;
-$VERSION = do { my @r = (q$Revision: 0.69 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r }; # must be all one line, for MakeMaker
+#($VERSION) = q$Revision: 0.70 $ =~ /([\d\.]+)/;
+$VERSION = do { my @r = (q$Revision: 0.70 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r }; # must be all one line, for MakeMaker
 my $FALSE = 0;
 my $TRUE = !$FALSE;
-my $CURSOR_HOME = 10;            # NOTE!  This assumes it stays fixed!
-my $SELECT_HOME = 21;            # NOTE!  This assumes it stays fixed!
-my $DELETE_HOME = 99;            # NOTE!  This assumes it stays fixed!
-my $FILENAME = "zigzag.zz";      # Default filename for initial slice
-my $ZZMAIL_SUPPORT = $FALSE;	 # Enable preliminary ZZmail support
-#my $COMMAND_SYNC_COUNT = 20;     # Sync the DB after this many commands
+my $CURSOR_HOME = 10;           # NOTE!  This assumes it stays fixed!
+my $SELECT_HOME = 21;           # NOTE!  This assumes it stays fixed!
+my $DELETE_HOME = 99;           # NOTE!  This assumes it stays fixed!
+my $FILENAME = "zigzag.zz";     # Default filename for initial slice
+my $ZZMAIL_SUPPORT = $FALSE;	# Enable preliminary ZZmail support
+#my $COMMAND_SYNC_COUNT = 20;    # Sync the DB after this many commands
 my $BACKUP_FILE_SUFFIX = ".bak";
 
 # Declare globals
-use vars qw(%ZZ $Command_Count $Hcells $Vcells $Input_Buffer);
+use vars qw($Command_Count $Hcells $Vcells $Input_Buffer);
 
-#my %ZZ;                          # The Zigzag cells and links
-#my $Input_Buffer;                # Cell number entered from the keyboard
-#my $Command_Count;               # Counts commands between DB syncs
-my $DB_Ref;                      # We use this for sync'ing.
+#my $Input_Buffer;               # Cell number entered from the keyboard
+#my $Command_Count;              # Counts commands between DB syncs
+my @Filename;			# Array of filenames
+my @DB_Ref;			# Array of database references
+my @Hash_Ref;			# Array of hash references
 #my $Hcells;			 # Horizontal cells per window
 #my $Vcells;			 # Vertical cells per window
 
@@ -373,9 +390,9 @@ sub initial_geometry()
    );
 }
 
-sub db_upgrade()
+sub slice_upgrade()
 # Perform any upgrades necessary to maintain backward compatibility
-# with old data files
+# with old home slices
 {
   # Earlier than v0.44.1.1 not presently supported due to
   # massive dimension renaming
@@ -393,26 +410,30 @@ sub db_upgrade()
   dimension_rename("d.containment", "d.inside");
 
   # Make sure $SELECT_HOME exists (from v0.57)
-  if (not defined $ZZ{$SELECT_HOME})
+  if (not defined cell_get($SELECT_HOME))
   {
-    $ZZ{$SELECT_HOME} = "Selection";
+    cell_set($SELECT_HOME, "Selection");
     link_make($SELECT_HOME, $SELECT_HOME, "+d.2");
     cell_insert($SELECT_HOME, $CURSOR_HOME, "-d.1");
   }
 
   # Rename the "Midden" to the "Recycle pile" (from v0.62)
-  $ZZ{$DELETE_HOME} = "Recycle pile" if $ZZ{$DELETE_HOME} eq "Midden";
+  cell_set($DELETE_HOME, "Recycle pile") if cell_get($DELETE_HOME) eq "Midden";
 
   # Make sure recycle pile is a circular queue (from v0.67)
   my $first = get_lastcell($DELETE_HOME, "-d.2");
   link_make($first, get_lastcell($DELETE_HOME, "+d.2"), "-d.2")
-    unless defined $ZZ{"$first-d.2"};
+    unless defined cell_nbr($first, "-d.2");
 }
 
-sub db_open(;$)
+sub slice_open(;$)
 {
   # If there's a parameter, use it as the filename
-  my $Filename = shift || $FILENAME;
+  my %hash;
+  my $DB_Ref;
+  my $Filename = shift;
+  # There's a default filename for the first (home) slice
+  $Filename = $FILENAME if (not defined $Filename) and ($#Filename < 0);
   if (-e $Filename)
   {
     # we have an existing datafile - back it up!
@@ -420,28 +441,49 @@ sub db_open(;$)
       || die "Can't rename data file \"$Filename\": $!\n";
     copy($Filename . $BACKUP_FILE_SUFFIX, $Filename)
       || die "Can't copy data file \"$Filename\": $!\n";
-    $DB_Ref = tie %ZZ, 'DB_File', $Filename, O_RDWR
+    $DB_Ref = tie %hash, 'DB_File', $Filename, O_RDWR
       || die "Can't open data file \"$Filename\": $!\n";
-    db_upgrade();
+    push @Hash_Ref, \%hash;
+    slice_upgrade() if $#DB_Ref < 0;
   }
   else
   {
-    # no initial data file,  resort to initial geometry
-    $DB_Ref = tie %ZZ, 'DB_File', $Filename, O_RDWR | O_CREAT
+    # no initial data file
+    $DB_Ref = tie %hash, 'DB_File', $Filename, O_RDWR | O_CREAT
       || die "Can't create data file \"$Filename\": $!\n";
-    %ZZ = initial_geometry();
+    # resort to initial geometry for first (home) slice
+    %hash = initial_geometry() if $#Hash_Ref < 0;
+    push @Hash_Ref, \%hash;
+  }
+  push @Filename, $Filename;
+  push @DB_Ref, $DB_Ref;
+}
+
+sub slice_close($)
+{
+  my $num = shift;
+  undef $DB_Ref[$num];
+  untie %{$Hash_Ref[$num]};
+  splice @Filename, $num, 1;
+  splice @DB_Ref, $num, 1;
+  splice @Hash_Ref, $num, 1;
+}
+
+sub slice_close_all()
+{
+  my $DB_Ref;
+  while (defined ($DB_Ref = pop @DB_Ref))
+  {
+    pop @Filename;
+    undef $DB_Ref;
+    untie %{pop @Hash_Ref};
   }
 }
 
-sub db_close()
+sub slice_sync_all()
 {
-  undef $DB_Ref;	# So untie doesn't complain
-  untie %ZZ;
-}
-
-sub db_sync()
-{
-  $DB_Ref->sync();
+  foreach (@DB_Ref)
+  { $_->sync(); }
 }
 
 
@@ -474,13 +516,15 @@ sub wordbreak($$)
 sub is_cursor($)
 {
   my $cell = shift;
-  return (defined($ZZ{"$cell-d.cursor"}) || defined($ZZ{"$cell+d.cursor"}));
+  return (defined(cell_nbr($cell, "-d.cursor")) ||
+	  defined(cell_nbr($cell, "+d.cursor")));
 }
 
 sub is_clone($)
 {
   my $cell = shift;
-  return (defined($ZZ{"$cell-d.clone"}) || defined($ZZ{"$cell+d.clone"}));
+  return (defined(cell_nbr($cell, "-d.clone")) ||
+	  defined(cell_nbr($cell, "d.clone")));
 }
 
 sub is_selected($)
@@ -511,13 +555,19 @@ sub dimension_is_essential($)
   return $_[0] =~ /^[+-]?d\.(1|2|cursor|clone|inside|contents|mark)$/;
 }
 
+sub dimension_home()
+{
+  # Dimension list is +d.1 from Cursor home
+  return cell_nbr($CURSOR_HOME, "+d.1");
+}
+
 sub dimension_find($)
 {
-  return cell_find($ZZ{"$CURSOR_HOME+d.1"}, "+d.2", $_[0]);
+  return cell_find(dimension_home(), "+d.2", $_[0]);
 }
 
 sub dimension_rename($$)
-# Rename an entire dimension.  Warning - traverses entire data file!
+# Rename an entire dimension.  Warning - traverses all cells!
 {
   my ($d_orig, $d_new) = @_;
   my $cell = dimension_find($d_orig);
@@ -525,10 +575,13 @@ sub dimension_rename($$)
   if ($cell and not dimension_find($d_new))
   {
     print STDERR "Renaming dimension $d_orig to $d_new.  Please wait...";
-    $ZZ{$cell} = $d_new;
+    cell_set($cell, $d_new);
 
-    while (my ($key, $value) = each %ZZ)
-    { $key =~ s/$d_orig$/$d_new/; }
+    foreach (@Hash_Ref)
+    {
+      while (my ($key, $value) = each %$_)
+      { $key =~ s/$d_orig$/$d_new/; }
+    }
     print STDERR "done.\n";
   }
 }
@@ -558,9 +611,9 @@ sub get_selection($)
   my ($n) = @_;
   my $sel;
   for ($sel = $SELECT_HOME; $n && defined($sel); $n--)
-  { $sel = $ZZ{"$sel+d.2"}; }
+  { $sel = cell_nbr($sel, "+d.2"); }
 
-  cells_row($ZZ{"$sel+d.mark"}, "+d.mark");
+  cells_row(cell_nbr($sel, "+d.mark"), "+d.mark");
 }
 
 sub get_which_selection($) 
@@ -568,7 +621,7 @@ sub get_which_selection($)
 # if it is not part of a selection
 {
   my $cell = shift;
-  return undef unless defined $ZZ{"$cell-d.mark"};
+  return undef unless defined cell_nbr($cell, "-d.mark");
   get_lastcell($cell, "-d.mark");
 }
 
@@ -576,11 +629,11 @@ sub get_lastcell($$)
 # Find the last cell in a given direction
 {
   my ($cell, $dir) = @_;
-  die "No cell $cell" unless defined($ZZ{"$cell"});
+  die "No cell $cell" unless defined(cell_get($cell));
   die "Invalid direction $dir" unless ($dir =~ /^[+-]/);
 
   # Follow links to the end or until we return to where we started
-  $cell = $_ while defined($_ = $ZZ{"$cell$dir"}) && ($_ != $_[0]);
+  $cell = $_ while defined($_ = cell_nbr($cell, $dir)) && ($_ != $_[0]);
   return $cell;
 }
 
@@ -595,9 +648,9 @@ sub get_distance($$$)
   return 0 if $start == $end;
 
   my $dist = 1;
-  for ($cell = $ZZ{"$start$dir"};
+  for ($cell = cell_nbr($start, $dir);
        defined $cell && $cell != $end && $cell != $start;
-       $cell = $ZZ{"$cell$dir"}
+       $cell = cell_nbr($cell, $dir)
       )
   { $dist++; }
   return undef if !defined($cell) || $cell == $start;
@@ -608,12 +661,12 @@ sub get_outline_parent($)
 # Find the "outline parent" (first cell -d.1 along -d.2) of a cell
 {
   my $cell = $_[0];
-  die "No cell $cell" unless defined($ZZ{"$cell"});
+  die "No cell $cell" unless defined(cell_get($cell));
 
   # Move -d.2 until we find a -d.1 link or return to where we started
-  $cell = $_ while (!defined($ZZ{"$cell-d.1"}) &&
-		    defined($_ = $ZZ{"$cell-d.2"}) && ($_ != $_[0]));
-  $cell = $_ if defined($_ = $ZZ{"$cell-d.1"});
+  $cell = $_ while (!defined(cell_nbr($cell, "-d.1")) &&
+		    defined($_ = cell_nbr($cell, "-d.2")) && ($_ != $_[0]));
+  $cell = $_ if defined($_ = cell_nbr($cell, "-d.1"));
   return $cell;
 }
 
@@ -621,8 +674,8 @@ sub get_cell_contents($)
 # Return the contents of a cell
 {
   my $cell = $_[0];
-  die "No cell $cell" unless defined($ZZ{"$cell"});
-  my $contents = $ZZ{get_lastcell($cell, "-d.clone")};
+  die "No cell $cell" unless defined(cell_get($cell));
+  my $contents = cell_get(get_lastcell($cell, "-d.clone"));
 
   if ($ZZMAIL_SUPPORT && $contents =~ /^\[(\d+)\+(\d+)\]/)
   # Note 1: This should handle pointer lists, but currently only handles
@@ -632,7 +685,7 @@ sub get_cell_contents($)
   {
     my $pos = $1;
     my $len = $2;
-    my $PRIMEDIA = $ZZ{get_outline_parent($cell)};
+    my $PRIMEDIA = cell_get(get_outline_parent($cell));
     if (open(PRIMEDIA, "<$PRIMEDIA"))
     {
       my $error = $FALSE;
@@ -654,7 +707,7 @@ sub get_cursor($)
 
   # Count to the numbered cursor
   for ($_ = 0; defined($cell) && ($_ <= $number); $_++)
-  { $cell = $ZZ{"$cell+d.2"}; }
+  { $cell = cell_nbr($cell, "+d.2"); }
   die "No cursor $number" unless defined($cell);
   return $cell;
 }
@@ -667,21 +720,21 @@ sub get_dimension($$)
   my ($curs, $dir) = @_;
   die "Invalid direction $dir" unless ($dir =~ /^[LRUDIO]$/);
 
-  $curs = $ZZ{"$curs+d.1"};
+  $curs = cell_nbr($curs, "+d.1");
   if ($dir eq "L")
-  { return reverse_sign($ZZ{$curs}); }
+  { return reverse_sign(cell_get($curs)); }
   if ($dir eq "R")
-  { return $ZZ{$curs}; }
-  $curs = $ZZ{"$curs+d.1"};
+  { return cell_get($curs); }
+  $curs = cell_nbr($curs, "+d.1");
   if ($dir eq "U")
-  { return reverse_sign($ZZ{$curs}); }
+  { return reverse_sign(cell_get($curs)); }
   if ($dir eq "D")
-  { return $ZZ{$curs}; }
-  $curs = $ZZ{"$curs+d.1"};
+  { return cell_get($curs); }
+  $curs = cell_nbr($curs, "+d.1");
   if ($dir eq "I")
-  { return reverse_sign($ZZ{$curs}); }
+  { return reverse_sign(cell_get($curs)); }
   if ($dir eq "O")
-  { return $ZZ{$curs}; }
+  { return cell_get($curs); }
 }
 
 sub add_contents($$$)
@@ -691,20 +744,22 @@ sub add_contents($$$)
   push @$listref, $start;
   $hashref->{$start} = $TRUE;
 
-  my $cell = $ZZ{"$start+d.inside"};
+  my $cell = cell_nbr($start, "+d.inside");
   while (defined $cell and not defined $hashref->{$cell})
   {
     push @$listref, $cell;
     $hashref->{$cell} = $TRUE;
 
-    my $index = $ZZ{"$cell+d.contents"};
-    while (defined $index and not defined $hashref->{$index})
+    my $index = cell_nbr($cell, "+d.contents");
+    while (defined $index and
+	   not defined $hashref->{$index} and
+	   not defined cell_nbr($index, "-d.inside"))
     {
       add_contents($index, $listref, $hashref);
-      $index = $ZZ{"$index+d.contents"};
+      $index = cell_nbr($index, "+d.contents");
     }
 
-    $cell = $ZZ{"$cell+d.inside"};
+    $cell = cell_nbr($cell, "+d.inside");
   }
 }
 
@@ -721,17 +776,19 @@ sub get_links_to($)
 # Returns a list of all the links back to the specified cell
 {
   my $cell = $_[0];
-  my $index = $ZZ{"$CURSOR_HOME+d.1"}; # Dimension list is +d.1 from Cursor home
+  my $index = dimension_home();
   my @result;
 
   do
   {
-    my $dim = $ZZ{$index};
-    push @result, $ZZ{"$cell-$dim"} . "+$dim" if defined $ZZ{"$cell-$dim"};
-    push @result, $ZZ{"$cell+$dim"} . "-$dim" if defined $ZZ{"$cell+$dim"};
-    $index = $ZZ{"$index+d.2"};
+    my $dim = cell_get($index);
+    push @result, cell_nbr($cell, "-$dim") . "+$dim"
+      if defined cell_nbr($cell, "-$dim");
+    push @result, cell_nbr($cell, "+$dim") . "-$dim"
+      if defined cell_nbr($cell, "+$dim");
+    $index = cell_nbr($index, "+d.2");
     die "Dimension list broken" unless defined $index;
-  } until $index = $ZZ{"CURSOR_HOME+d.1"};
+  } until $index == dimension_home();
   return @result;
 }
 
@@ -772,10 +829,10 @@ sub do_shear($$$;$$)
 
   my $cell;
   my ($prev_cell, $prev_linked);
-  my $first_linked = $ZZ{"$first_cell$link"};
+  my $first_linked = cell_nbr($first_cell, $link);
 
   my @shear_cells = cells_row($first_cell, $dir);
-  my @linked_cells = map {$ZZ{"$_$link"}} @shear_cells;
+  my @linked_cells = map {cell_nbr($_, $link)} @shear_cells;
 
   my @new_link = @linked_cells;
   # Move some of these from the beginning
@@ -814,45 +871,52 @@ sub do_shear($$$;$$)
 #
 sub link_break($$;$)
 # Break a link between two cells in a given direction.
-# This should be the only way links are ever broken to ensure consistency.
+# To ensure consistency, this should be the only way links are ever broken
 # Second argument is optional.  If present, it must be linked from cell 1
 # in the approprate dimension.
 {
-  my ($cell1, $cell2, $dir);
+  my ($cell1, $cell2, $dir, $slice);
+
   if (@_ == 3)
   {
     ($cell1, $cell2, $dir) = @_;
+    die "Invalid direction $dir" unless ($dir =~ /^[+-]/);
+    $slice = cell_slice("$cell1$dir");
+    die "$cell1 has no link in direction $dir" unless defined $slice;
     die "$cell1 is not linked to $cell2 in direction $dir"
-      unless $cell2 == $ZZ{"$cell1$dir"};
+      unless $cell2 == $Hash_Ref[$slice]{"$cell1$dir"};
   }
   else
   {
     ($cell1, $dir) = @_;
-    $cell2 = $ZZ{"$cell1$dir"}; # Infer second argument
+    die "Invalid direction $dir" unless ($dir =~ /^[+-]/);
+    $slice = cell_slice("$cell1$dir");
+    die "$cell1 has no link in direction $dir" unless defined $slice;
+    $cell2 = $Hash_Ref[$slice]{"$cell1$dir"}; # Infer second argument
   }
 
-  die "No cell $cell1" unless defined $ZZ{"$cell1"};
-  die "No cell $cell2" unless defined $ZZ{"$cell2"};
-  die "Invalid direction $dir" unless ($dir =~ /^[+-]/);
+  die "No cell $cell1" unless defined cell_get($cell1);
+  die "No cell $cell2" unless defined cell_get($cell2);
 
-  delete($ZZ{"$cell1$dir"});
-  delete($ZZ{$cell2 . reverse_sign($dir)});
+  delete $Hash_Ref[$slice]{"$cell1$dir"};
+  $dir = reverse_sign($dir);
+  delete $Hash_Ref[cell_slice("$cell2$dir")]{"$cell2$dir"};
 }
 
 sub link_make($$$)
 # Make a link between two cells in a given direction.
-# This should be the only way links are ever made to ensure consistency.
+# To ensure consistency, this should be the only way links are ever made
 {
   my ($cell1, $cell2, $dir) = @_;
-  die "No cell $cell1" unless defined($ZZ{"$cell1"});
-  die "No cell $cell2" unless defined($ZZ{"$cell2"});
+  die "No cell $cell1" unless defined cell_get($cell1);
+  die "No cell $cell2" unless defined cell_get($cell2);
   die "Invalid direction $dir" unless ($dir =~ /^[+-]/);
   my $back = reverse_sign($dir);
-  die "$cell1 already linked" if defined($ZZ{"$cell1$dir"});
-  die "$cell2 already linked" if defined($ZZ{"$cell2$back"});
+  die "$cell1 already linked" if defined cell_nbr($cell1, $dir);
+  die "$cell2 already linked" if defined cell_nbr($cell2, $back);
 
-  $ZZ{"$cell1$dir"} = $cell2;
-  $ZZ{"$cell2$back"} = $cell1;
+  $Hash_Ref[cell_slice($cell1)]{"$cell1$dir"} = $cell2;
+  $Hash_Ref[cell_slice($cell2)]{"$cell2$back"} = $cell1;
 }
 
 
@@ -860,6 +924,39 @@ sub link_make($$$)
 # Functions that operate on individual cells
 # Named cell_*
 #
+sub cell_slice($)
+# Returns the slice in which a cell resides
+{
+  my $slice = 0;
+  my $found;
+  do
+  { $found = defined $Hash_Ref[$slice++]{$_[0]}; }
+  until ($found or $slice > $#Hash_Ref);
+  return $found ? $slice - 1 : undef;
+}
+
+sub cell_get($)
+# Retrieve cell contents
+{
+  my $slice = cell_slice($_[0]);
+  return (defined $slice) ? $Hash_Ref[$slice]{$_[0]} : undef;
+}
+
+sub cell_set($$)
+# Set cell contents
+{
+  my $slice = cell_slice($_[0]);
+  die "No cell $_[0]" unless defined $slice;
+  $Hash_Ref[$slice]{$_[0]} = $_[1];
+}
+
+sub cell_nbr($$)
+# Follow link from cell
+{
+  my $slice = cell_slice("$_[0]$_[1]");
+  return (defined $slice) ? $Hash_Ref[$slice]{"$_[0]$_[1]"} : undef;
+}
+
 sub cell_insert($$$)
 # Insert a cell next to another cell in a given direction
 #
@@ -869,14 +966,14 @@ sub cell_insert($$$)
 #           $cell2---$cell3                $cell2---$cell1---($cell3 or next)
 {
   my ($cell1, $cell2, $dir) = @_;
-  die "No cell $cell1" unless defined($ZZ{"$cell1"});
-  die "No cell $cell2" unless defined($ZZ{"$cell2"});
+  die "No cell $cell1" unless defined(cell_get($cell1));
+  die "No cell $cell2" unless defined(cell_get($cell2));
   die "Invalid direction $dir" unless ($dir =~ /^[+-]/);
-  my $cell3 = $ZZ{"$cell2$dir"};
+  my $cell3 = cell_nbr($cell2, $dir);
 
   # Can't insert if $cell1 has inappropriate neighbours
-  if (defined($ZZ{$cell1 . reverse_sign($dir)}) ||
-      ((defined($ZZ{"$cell1$dir"}) && defined($cell3))))
+  if (defined(cell_nbr($cell1, reverse_sign($dir))) ||
+      ((defined(cell_nbr($cell1, $dir)) && defined($cell3))))
   { user_error(2, "$cell1 $dir $cell2"); }
   else
   {
@@ -900,8 +997,8 @@ sub cell_find($$$)
   # Follow links until we find a match or return to where we started
   do
   {
-    $found = $cell if (defined $cell) and ($ZZ{$cell} eq $contents);
-    $cell = $ZZ{"$cell$dir"};
+    $found = $cell if (defined $cell) and (cell_get($cell) eq $contents);
+    $cell = cell_nbr($cell, $dir);
   } until $found or (not defined $cell) or ($cell == $start);
   return $found;
 }
@@ -910,9 +1007,9 @@ sub cell_excise($$)
 # Remove a cell from a given dimension
 {
   my ($cell, $dim) = @_;
-  die "No cell $cell" unless defined $ZZ{"$cell"};
-  my $prev = $ZZ{"$cell-$dim"};
-  my $next = $ZZ{"$cell+$dim"};
+  die "No cell $cell" unless defined cell_get($cell);
+  my $prev = cell_nbr($cell, "-$dim");
+  my $next = cell_nbr($cell, "+$dim");
 
   link_break($cell, $prev, "-$dim") if defined($prev);
   link_break($cell, $next, "+$dim") if defined($next);
@@ -920,18 +1017,18 @@ sub cell_excise($$)
 }
 
 sub cell_new(;$)
-# Create a new cell (or recycle one from the recycle pile)
+# Create a new cell in slice 0 (or recycle one from the recycle pile)
 {
-  my $new = $ZZ{"$DELETE_HOME-d.2"};
+  my $new = cell_nbr($DELETE_HOME, "-d.2");
 
   # Are there any cells left on the recycle pile?
   if ($new == $DELETE_HOME)
-  { $new = $ZZ{"n"}++; }
+  { $new = $Hash_Ref[0]{"n"}++; }
   else
   { cell_excise($new, "d.2"); }
 
   # Assign contents of cell (defaults to the cell number)
-  $ZZ{$new} = (defined $_[0]) ? $_[0] : $new;
+  $Hash_Ref[0]{$new} = (defined $_[0]) ? $_[0] : $new;
 }
 
 #
@@ -960,8 +1057,8 @@ sub cursor_move_dimension($$)
   my $cell = get_lastcell($curs, "-d.cursor");
 
   # Don't bother if there's nowhere to go
-  return if (!defined($_ = $ZZ{"$cell$dir"}) ||
-             ($_ == $cell) || defined $ZZ{"$_-d.cursor"});
+  return if (!defined($_ = cell_nbr($cell, $dir)) ||
+             ($_ == $cell) || defined cell_nbr($_, "-d.cursor"));
 
   # Now move the cursor
   $cell = get_lastcell($_, "+d.cursor");
@@ -977,7 +1074,7 @@ sub cursor_jump($$)
   my ($curs, $dest) = @_;
 
   # Must jump to a valid non-cursor cell
-  if (!defined $ZZ{$dest} || defined $ZZ{"$dest-d.cursor"})
+  if (!defined cell_get($dest) || defined cell_nbr($dest, "-d.cursor"))
   { user_error(3, $dest); }
   else
   {
@@ -1007,7 +1104,7 @@ sub atcursor_execute($)
   my $cell;
   foreach $cell (get_contained(get_lastcell(get_cursor($_[0]), "-d.cursor")))
   {
-#    $_ = $ZZ{get_lastcell($cell, "-d.clone")};
+#    $_ = cell_get(get_lastcell($cell, "-d.clone"));
     $_ = get_cell_contents($cell);
     $@ = "Cell does not start with #";	# Error in case eval isn't done
     if (/^#/)
@@ -1049,12 +1146,12 @@ sub atcursor_clone($;$)
     $selected{$cell} = 'yup';
     if ($op eq 'clone')
     {
-      $ZZ{$new} = "Clone of $cell";
+      cell_set($new, "Clone of $cell");
       cell_insert($new, $cell, "+d.clone");
     }
     elsif ($op eq 'copy')
     {
-      $ZZ{$new} = "Copy of " . $ZZ{$cell};
+      cell_set($new, "Copy of " . cell_get($cell));
     }
     $last_new_cell = $new;
   }
@@ -1073,7 +1170,7 @@ sub atcursor_clone($;$)
 #    foreach $dim (@links)
 #    {
 #      # If the linked cell is selected, then copy the link
-#      if ($selected{$ZZ{"$old$dim"}})
+#      if ($selected{cell_nbr($old, $dim)})
 #      {
 #	$ZZ{"$new$dim"} = $new{$ZZ{"$old$dim"}};
 #	# Warning:  Doesn't use `link_make'.
@@ -1169,7 +1266,7 @@ sub atcursor_delete($)
 {
   my $curs = get_cursor($_[0]);
   my $cell = get_lastcell($curs, "-d.cursor");
-  my $dhome = $ZZ{"$CURSOR_HOME+d.1"}; # Dimension list is +d.1 from Cursor home
+  my $dhome = dimension_home();
   my $index = $dhome;
   my $neighbour;
 
@@ -1177,34 +1274,35 @@ sub atcursor_delete($)
   {
     user_error(10);
   }
-  elsif ((cell_find($cell, "-d.2", $ZZ{$dhome}) == $dhome) and
-    dimension_is_essential($ZZ{$cell}))
+  elsif ((cell_find($cell, "-d.2", cell_get($dhome)) == $dhome) and
+    dimension_is_essential(cell_get($cell)))
   {
-    user_error(11, $ZZ{$cell})
+    user_error(11, cell_get($cell))
   }
   else
   {
     # Pass the torch if this cell has clone(s)
-    if (!defined $ZZ{"$cell-d.clone"} && ($_ = $ZZ{"$cell+d.clone"}))
-    { $ZZ{$_} = $ZZ{$cell}; }
+    if (!defined cell_nbr($cell, "-d.clone") &&
+	($_ = cell_nbr($cell, "+d.clone")))
+    { cell_set($_, cell_get($cell)); }
   
     do
     {
-      my $dim = $ZZ{$index};
+      my $dim = cell_get($index);
       # Try and find any valid non-cursor neighbour
       $neighbour = $_ unless defined $neighbour
-        || ((!defined($_ = $ZZ{"$cell-$dim"})
-            || ($_ eq $cell)
-            || defined $ZZ{"$_-d.cursor"})
-          && (!defined($_ = $ZZ{"$cell+$dim"})
-            || ($_ eq $cell)
-            || defined $ZZ{"$_-d.cursor"}));
+        || ((!defined($_ = cell_nbr($cell, "-$dim"))
+            || ($_ == $cell)
+            || defined cell_nbr($_, "-d.cursor"))
+          && (!defined($_ = cell_nbr($cell, "+$dim"))
+            || ($_ == $cell)
+            || defined cell_nbr($_, "-d.cursor")));
   
       # Excise $cell from dimension $dim
       cell_excise($cell, $dim);
   
       # Proceed to the next dimension
-      $index = $ZZ{"$index+d.2"};
+      $index = cell_nbr($index, "+d.2");
       die "Dimension list broken" unless defined $index;
     } until ($index == $dhome);
     $neighbour = 0 unless defined $neighbour;
@@ -1234,15 +1332,15 @@ sub atcursor_hop(@)
   return if $dim eq "d.cursor";
 
   my $cell = get_lastcell($curs, "-d.cursor");
-  my $neighbour = $ZZ{"$cell$dim"};
+  my $neighbour = cell_nbr($cell, $dim);
   if (!defined $neighbour)
   { 
      user_error(5, "$cell$dim"); 
   }
   else
   {
-    my $prev = $ZZ{$cell . reverse_sign($dim)};
-    my $next = $ZZ{"$neighbour$dim"};
+    my $prev = cell_nbr($cell, reverse_sign($dim));
+    my $next = cell_nbr($neighbour, $dim);
 
     link_break($cell, $neighbour, $dim);
     if (defined $prev)
@@ -1294,7 +1392,7 @@ sub atcursor_make_link($$)
   {
      cursor_move_dimension($curs, $dim);
   }
-  elsif (!defined $ZZ{$Input_Buffer})
+  elsif (!defined cell_get($Input_Buffer))
   {
      user_error(6, $Input_Buffer);
   }
@@ -1318,7 +1416,7 @@ sub atcursor_break_link(@)
   return if $dim eq "d.cursor";
 
   # First check that there is an existing link
-  if (!defined($_ = $ZZ{"$cell$dim"}))
+  if (!defined($_ = cell_nbr($cell, $dim)))
   {
      user_error(7, "$cell$dim");
   }
@@ -1346,9 +1444,9 @@ sub cells_row($$)
 
   my $cell;
   my @result = ($cell1);
-  for ($cell = $ZZ{"$cell1$dir"}; 
+  for ($cell = cell_nbr($cell1, $dir); 
        defined($cell) && $cell != $cell1; 
-       $cell = $ZZ{"$cell$dir"}
+       $cell = cell_nbr($cell, $dir)
       )
   { push @result, $cell; }
   @result;
@@ -1366,7 +1464,7 @@ sub layout_cells_horizontal($$$$$)
   for (my $i = 1; defined $cell && ($i <= int($Hcells / 2)); $i++)
   {
     # Find the next cell, if any
-    if (defined ($cell = $ZZ{"$cell$dim"}))
+    if (defined ($cell = cell_nbr($cell, $dim)))
     {
       my $col = $sign * $i;
       $$lref{"$col,$row"} = $cell;
@@ -1384,7 +1482,7 @@ sub layout_cells_vertical($$$$$)
   for (my $i = 1; defined $cell && ($i <= int($Vcells / 2)); $i++)
   {
     # Find the next cell, if any
-    if (defined ($cell = $ZZ{"$cell$dim"}))
+    if (defined ($cell = cell_nbr($cell, $dim)))
     {
       my $row = $sign * $i;
       $$lref{"$col,$row"} = $cell;
@@ -1420,7 +1518,7 @@ sub layout_Iraster($$$$)
   for ($y = 1, $i = $cell; defined $i && ($y <= int($Vcells / 2)); $y++)
   {
     # Find the next cell above, if any
-    if (defined $i && defined ($i = $ZZ{"$i$up"}))
+    if (defined $i && defined ($i = cell_nbr($i, $up)))
     {
       $$lref{"0,-$y"} = $i;
       $$lref{"0|-$y"} = $TRUE;
@@ -1432,7 +1530,7 @@ sub layout_Iraster($$$$)
   for ($y = 1, $i = $cell; defined $i && ($y <= int($Vcells / 2)); $y++)
   {
     # Find the next cell below, if any
-    if (defined $i && defined ($i = $ZZ{"$i$down"}))
+    if (defined $i && defined ($i = cell_nbr($i, $down)))
     {
       $$lref{"0,$y"} = $i;
       $$lref{"0|$y"} = $TRUE;
@@ -1457,7 +1555,7 @@ sub layout_Hraster($$$$)
   for ($x = 1, $i = $cell; defined $i && ($x <= int($Hcells / 2)); $x++)
   {
     # Find the next cell to the left, if any
-    if (defined $i && defined ($i = $ZZ{"$i$left"}))
+    if (defined $i && defined ($i = cell_nbr($i, $left)))
     {
       $$lref{"-$x,0"} = $i;
       $$lref{"-$x-0"} = $TRUE;
@@ -1469,7 +1567,7 @@ sub layout_Hraster($$$$)
   for ($x = 1, $i = $cell; defined $i && ($x <= int($Hcells / 2)); $x++)
   {
     # Find the next cell to the right, if any
-    if (defined $i && defined ($i = $ZZ{"$i$right"}))
+    if (defined $i && defined ($i = cell_nbr($i, $right)))
     {
       $$lref{"$x,0"} = $i;
       $$lref{"$x-0"} = $TRUE;
@@ -1489,15 +1587,15 @@ sub view_quadrant_toggle($)
 # Toggle quadrant display style for given window
 {
   my $cell = get_cursor($_[0]);
-  $cell = $ZZ{"$cell+d.1"};
-  $cell = $ZZ{"$cell+d.1"};
-  $cell = $ZZ{"$cell+d.1"};
-  $cell = $ZZ{"$cell+d.1"};
+  $cell = cell_nbr($cell, "+d.1");
+  $cell = cell_nbr($cell, "+d.1");
+  $cell = cell_nbr($cell, "+d.1");
+  $cell = cell_nbr($cell, "+d.1");
 
-  if ($ZZ{$cell} =~ /Q$/)
-  { $ZZ{$cell} = substr($ZZ{$cell}, 0, 1); }
+  if (cell_get($cell) =~ /Q$/)
+  { cell_set($cell, substr(cell_get($cell), 0, 1)); }
   else
-  { $ZZ{$cell} .= "Q"; }
+  { cell_set($cell, cell_get($cell) . "Q"); }
 
   display_dirty();
 }
@@ -1506,13 +1604,15 @@ sub view_raster_toggle($)
 # Toggle redraw style for given window
 {
   my $cell = get_cursor($_[0]);
-  $cell = $ZZ{"$cell+d.1"};
-  $cell = $ZZ{"$cell+d.1"};
-  $cell = $ZZ{"$cell+d.1"};
-  $cell = $ZZ{"$cell+d.1"};
+  $cell = cell_nbr($cell, "+d.1");
+  $cell = cell_nbr($cell, "+d.1");
+  $cell = cell_nbr($cell, "+d.1");
+  $cell = cell_nbr($cell, "+d.1");
 
   # Toggle the value between "I" and "H"
-  $ZZ{$cell} =~ tr/IH/HI/;
+  $_ = cell_get($cell);
+  tr/IH/HI/;
+  cell_set($cell, $_);
 
   display_dirty();
 }
@@ -1522,11 +1622,13 @@ sub view_reset($)
 {
   my ($number) = @_;
   my $curs = get_cursor($number);
-  my $index = $ZZ{"$CURSOR_HOME+d.1"}; # Dimension list is +d.1 from Cursor home
+  my $index = dimension_home();
 
-  $ZZ{$curs = $ZZ{"$curs+d.1"}} = "+$ZZ{$index}";
-  $ZZ{$curs = $ZZ{"$curs+d.1"}} = "+" . $ZZ{$index = $ZZ{"$index+d.2"}};
-  $ZZ{$curs = $ZZ{"$curs+d.1"}} = "+" . $ZZ{$index = $ZZ{"$index+d.2"}};
+  cell_set($curs = cell_nbr($curs, "+d.1"), "+" . cell_get($index));
+  cell_set($curs = cell_nbr($curs, "+d.1"),
+	   "+" . cell_get($index = cell_nbr($index, "+d.2")));
+  cell_set($curs = cell_nbr($curs, "+d.1"),
+	   "+" . cell_get($index = cell_nbr($index, "+d.2")));
 
   display_dirty();
 }
@@ -1537,18 +1639,18 @@ sub view_rotate($$)
   my ($number, $axis) = @_;
   my $curs = get_cursor($number);
   die "Invalid axis $axis" unless $axis =~ /^[XYZ]$/;
-  $curs = $ZZ{"$curs+d.1"};
-  $curs = $ZZ{"$curs+d.1"} if $axis ne "X";
-  $curs = $ZZ{"$curs+d.1"} if $axis eq "Z";
-  my $dim = substr($ZZ{$curs}, 1);
-  my $dhome = $ZZ{"$CURSOR_HOME+d.1"}; # Dimension list is +d.1 from Cursor home
+  $curs = cell_nbr($curs, "+d.1");
+  $curs = cell_nbr($curs, "+d.1") if $axis ne "X";
+  $curs = cell_nbr($curs, "+d.1") if $axis eq "Z";
+  my $dim = substr(cell_get($curs), 1);
+  my $dhome = dimension_home();
   my $index = cell_find($dhome, "+d.2", $dim);
 
   if ($index)
-  { $index = $ZZ{"$index+d.2"}; }
+  { $index = cell_nbr($index, "+d.2"); }
   else
   { $index = $dhome; }
-  $ZZ{$curs} = substr($ZZ{$curs}, 0, 1) . $ZZ{$index};
+  cell_set($curs, substr(cell_get($curs), 0, 1) . cell_get($index));
   display_dirty();
 }
 
@@ -1557,11 +1659,11 @@ sub view_flip($$)
 {
   my ($number, $axis) = @_;
   my $curs = get_cursor($number);
-  $curs = $ZZ{"$curs+d.1"};
-  $curs = $ZZ{"$curs+d.1"} if $axis ne "X";
-  $curs = $ZZ{"$curs+d.1"} if $axis eq "Z";
+  $curs = cell_nbr($curs, "+d.1");
+  $curs = cell_nbr($curs, "+d.1") if $axis ne "X";
+  $curs = cell_nbr($curs, "+d.1") if $axis eq "Z";
 
-  $ZZ{$curs} = reverse_sign($ZZ{$curs});
+  cell_set($curs, reverse_sign(cell_get($curs)));
   display_dirty();
 }
 
