@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-# Xanadu(R) Zigzag(tm) Hyperstructure Kit HTML interface, $Revision: 0.3 $
+# Xanadu(R) Zigzag(tm) Hyperstructure Kit HTML interface, $Revision: 0.4 $
 #
 # Designed by Ted Nelson
 # Programmed by Andrew Pam ("xanni") and Bek Oberin ("gossamer")
@@ -25,9 +25,12 @@
 # ===================== Change Log
 #
 # Inital zigzag implementation
-# $Id: zizl,v 0.3 1999/01/26 06:09:46 xanni Exp $
+# $Id: zizl,v 0.4 1999/01/27 14:08:12 xanni Exp $
 #
 # $Log: zizl,v $
+# Revision 0.4  1999/01/27 14:08:12  xanni
+# Implemented simple web server
+#
 # Revision 0.3  1999/01/26 06:09:46  xanni
 # Implemented quad view
 #
@@ -41,6 +44,8 @@
 use integer;
 use strict;
 use POSIX;
+use HTTP::Daemon;	# See Perl-modules for installation instructions
+use HTTP::Status;
 
 use Zigzag;
 
@@ -54,15 +59,17 @@ use Zigzag;
 # Use the $TRUE and $FALSE constants instead of "1" and "0"
 
 # Define constants
-#my ($VERSION) = q$Revision: 0.3 $ =~ /([\d\.]+)/;
-my $VERSION = q$Id: zizl,v 0.3 1999/01/26 06:09:46 xanni Exp $;
+#my ($VERSION) = q$Revision: 0.4 $ =~ /([\d\.]+)/;
+my $VERSION = q$Id: zizl,v 0.4 1999/01/27 14:08:12 xanni Exp $;
 my $FALSE = 0;
 my $TRUE = !$FALSE;
 my $BGCOLOR = "#FFFFFF";	# White background
+my $GUIDE = "guide.gif";	# Filename of dimension guide
 my $CELLS_PER_WIN = 5;          # Number of cells displayed across each window
 my $COMMAND_SYNC_COUNT = 20;    # Sync the DB after this many commands
 
 # Declare globals
+my $daemon;			# HTTP server socket
 my $Zigzag_Terminated;          # True when interrupted by a signal
 
 # Initialise global zigzag data structures
@@ -220,6 +227,8 @@ sub display_open()
 {
   $Hcells = $CELLS_PER_WIN;
   $Vcells = $CELLS_PER_WIN;
+  $daemon = new HTTP::Daemon;
+  print "Please contact me at: <URL:", $daemon->url, ">\n";
 
   # Mark all windows dirty to ensure they all get redrawn
   display_dirty();
@@ -364,13 +373,14 @@ sub html_layout_window($)
   my $out = $ZZ{$curs};
   my $raster = $ZZ{$ZZ{"$curs+d.1"}};
   my $quad = ($raster =~ /Q$/);
+  my $window = "";
 
   # Draw window border, title and current cell number
-  print "<HTML><HEAD><TITLE>Zizzle: $name Window</TITLE></HEAD>\n";
-  print "<BODY BGCOLOR=\"#C0C0C0\"><CENTER>\n";
-#  print"<H1>$name Window ($raster)</H1>\n";
-  print "<TABLE CELLPADDING=5>\n";
-  print "<CAPTION ALIGN=TOP>$name Window ($raster)</CAPTION>\n";
+  $window .= "<HTML><HEAD><TITLE>Zizzle: $name Window</TITLE></HEAD>\n";
+  $window .= "<BODY BGCOLOR=\"#C0C0C0\"><CENTER>\n";
+#  $window .= "<H1>$name Window ($raster)</H1>\n";
+  $window .= "<TABLE CELLPADDING=5>\n";
+  $window .= "<CAPTION ALIGN=TOP>$name Window ($raster)</CAPTION>\n";
 
 #  if ($USE_STATUSBAR)
 #  {
@@ -391,7 +401,7 @@ sub html_layout_window($)
 #		"V  -+\n" .
 #		"$down" .
 #		"</PRE></FONT>";
-  my $guide =	"<TABLE><TR><TD><IMG SRC=guide.gif></TD>" .
+  my $guide =	"<TABLE><TR><TD><IMG SRC=$GUIDE></TD>" .
 		"<TD><FONT COLOR=\"#FF0000\">$right<BR>" .
 		"<BR>$out</FONT></TD></TR>\n" .
 		"<TR><TD><FONT COLOR=\"#FF0000\">$down</FONT></TD>" .
@@ -403,10 +413,11 @@ sub html_layout_window($)
   { layout_Hraster(\%layout, $cell, $right, $down); }
   else
   { layout_Iraster(\%layout, $cell, $right, $down); }
-  print html_table_layout($guide, \%layout, $quad);
+  $window .= html_table_layout($guide, \%layout, $quad);
 
-  print "</TABLE>\n";
-  print "</BODY></HTML>\n";
+  $window .= "</TABLE>\n";
+  $window .= "</BODY></HTML>\n";
+  return $window;
 }
 
 
@@ -510,7 +521,37 @@ db_open(shift);
 $SIG{INT} = $SIG{TERM} = \&catchsig;
 
 display_open();
-html_layout_window(1);
+while (my $connection = $daemon->accept)
+{
+  while (my $request = $connection->get_request)
+  {
+    if ($request->method ne 'GET')
+    { $connection->send_error(RC_METHOD_NOT_ALLOWED); }
+    else
+    {
+      my $path = $request->url->path;
+      if ($path =~ m#^/$GUIDE$#)
+      { $connection->send_file_response($GUIDE); }
+      elsif (my ($win) = ($path =~ m#^/(\d+)$#))
+      {
+        my $content;
+        eval { $content = html_layout_window($win) };
+        if ($@)
+        { $connection->send_error(RC_INTERNAL_SERVER_ERROR, $@); }
+        else
+        {
+          my $response = new HTTP::Response(RC_OK);
+          $response->content($content);
+          $connection->send_response($response);
+        }
+      }
+      else
+      { $connection->send_error(RC_FORBIDDEN); }
+    }
+  }
+  $connection->close;
+  undef $connection;
+}
 display_close();
 db_close();
 die if $@;
