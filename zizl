@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-# Xanadu(R) Zigzag(tm) Hyperstructure Kit HTML interface, $Revision: 0.5 $
+# Xanadu(R) Zigzag(tm) Hyperstructure Kit HTML interface, $Revision: 0.6 $
 #
 # Designed by Ted Nelson
 # Programmed by Andrew Pam ("xanni") and Bek Oberin ("gossamer")
@@ -25,9 +25,15 @@
 # ===================== Change Log
 #
 # Inital zigzag implementation
-# $Id: zizl,v 0.5 1999/01/27 18:36:36 xanni Exp $
+# $Id: zizl,v 0.6 1999/05/14 13:47:01 xanni Exp $
 #
 # $Log: zizl,v $
+# Revision 0.6  1999/05/14 13:47:01  xanni
+# * Moved cell_create() from Zigzag.pm
+# * Added two new user_error() messages for invalid deletion attempts
+# * Replaced direct access to %ZZ with cell_get(), cell_set() and cell_nbr()
+# * Changed db_open() and db_close() to slice_open() and slice_close_all()
+#
 # Revision 0.5  1999/01/27 18:36:36  xanni
 # Implemented start page, browser communication, clean server shutdown
 #
@@ -62,8 +68,8 @@ use Zigzag;
 # Use the $TRUE and $FALSE constants instead of "1" and "0"
 
 # Define constants
-#my ($VERSION) = q$Revision: 0.5 $ =~ /([\d\.]+)/;
-my $VERSION = q$Id: zizl,v 0.5 1999/01/27 18:36:36 xanni Exp $;
+#my ($VERSION) = q$Revision: 0.6 $ =~ /([\d\.]+)/;
+my $VERSION = q$Id: zizl,v 0.6 1999/05/14 13:47:01 xanni Exp $;
 my $FALSE = 0;
 my $TRUE = !$FALSE;
 my $BGCOLOR = "#FFFFFF";	# White background
@@ -196,6 +202,19 @@ sub cursor_jump_input($)
   undef $Input_Buffer;
 }
 
+sub cell_create($)
+# Create a new cell and optionally edit it
+{
+  my $edit = $_[0];
+  my ($curs, $dir) = input_get_direction();
+  if ($curs)
+  {
+    atcursor_insert($curs, $dir);
+    cursor_move_direction($curs, $dir);
+    atcursor_edit($curs) if $edit;
+  }
+}
+
 sub atcursor_edit($)
 # Invoke an external text editor to edit the cell under a given cursor
 {
@@ -273,12 +292,13 @@ sub html_table_cell($)
 # Draw cell contents
 {
   my ($cell) = @_;
-  my $cursor = $ZZ{"$cell+d.cursor"} unless defined $ZZ{"$cell-d.cursor"};
+  my $cursor = cell_nbr($cell, "+d.cursor")
+    unless defined cell_nbr($cell, "-d.cursor");
   my $number = -1;
   my $content;
 
   while (defined $cursor)
-  { $cursor = $ZZ{"$cursor-d.2"};  $number++; }
+  { $cursor = cell_nbr($cursor, "-d.2");  $number++; }
 #  ($content) = split(/\n/, get_cell_contents($cell));	# Just the first line
 # NOTE: We should probably handle containment if we're going to show the lot!
   $content = html_process_cell(get_cell_contents($cell));
@@ -374,15 +394,15 @@ sub html_layout_window($)
   my ($number) = @_;
   # Local variables
   my $curs = get_cursor($number);
-  my $name = $ZZ{$curs};
+  my $name = cell_get($curs);
   my $cell = get_lastcell($curs, "-d.cursor");
-  $curs = $ZZ{"$curs+d.1"};
-  my $right = $ZZ{$curs};
-  $curs = $ZZ{"$curs+d.1"};
-  my $down = $ZZ{$curs};
-  $curs = $ZZ{"$curs+d.1"};
-  my $out = $ZZ{$curs};
-  my $raster = $ZZ{$ZZ{"$curs+d.1"}};
+  $curs = cell_nbr($curs, "+d.1");
+  my $right = cell_get($curs);
+  $curs = cell_nbr($curs, "+d.1");
+  my $down = cell_get($curs);
+  $curs = cell_nbr($curs, "+d.1");
+  my $out = cell_get($curs);
+  my $raster = cell_get(cell_nbr($curs, "+d.1"));
   my $quad = ($raster =~ /Q$/);
   my $window = "";
 
@@ -440,8 +460,11 @@ sub html_start_page()
   $page .= "<BODY BGCOLOR=#FFFFFF>\n";
   $page .= "<H1>Welcome to Zizl(tm)</H1>\n";
   for ($num = 0, $curs = get_cursor(0);
-       defined $curs; $curs = $ZZ{"$curs+d.2"}, $num++)
-  { $page .= "<H2><A HREF=$num TARGET=$num>$ZZ{$curs} Window</A></H2>\n"; }
+       defined $curs; $curs = cell_nbr($curs, "+d.2"), $num++)
+  {
+    $_ = cell_get($curs);
+    $page .= "<H2><A HREF=$num TARGET=$num>$_ Window</A></H2>\n";
+  }
   $page .= "</BODY></HTML>\n";
   return $page;
 }
@@ -502,6 +525,8 @@ sub user_error($$)
     "Cannot break link - none exists",
     "Error opening file",
     "Cannot insert cells in selected dimension",
+    "Cannot delete essential cell!",
+    "Cannot delete essential dimension"
   );
 
 #  beep(); 
@@ -551,7 +576,7 @@ sub html_send($$)
 # Begin main.
 #
 
-db_open(shift);
+slice_open(shift);
 
 # Set the interrupt handlers
 $SIG{INT} = $SIG{TERM} = \&catchsig;
@@ -587,7 +612,7 @@ while (my $connection = $daemon->accept)
   undef $connection;
 }
 display_close();
-db_close();
+slice_close_all();
 if ($Zigzag_Terminated)
 { print STDERR "Terminated by $Zigzag_Terminated signal\n"; }
 else
