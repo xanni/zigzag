@@ -1,10 +1,10 @@
 #!/usr/bin/perl -w
 #
-# Xanadu(R) ZigZag(tm) Hyperstructure Kit HTML interface, $Revision: 0.1 $
+# Xanadu(R) Zigzag(tm) Hyperstructure Kit HTML interface, $Revision: 0.2 $
 #
 # Designed by Ted Nelson
 # Programmed by Andrew Pam ("xanni") and Bek Oberin ("gossamer")
-# Copyright (c) 1997, 1998 Project Xanadu
+# Copyright (c) 1997-1999 Project Xanadu
 #
 # This is only a partial implementation, with only a few structure and view
 # operations; however, they are enough to allow you to create, view and explore
@@ -25,9 +25,12 @@
 # ===================== Change Log
 #
 # Inital zigzag implementation
-# $Id: zizl,v 0.1 1999/01/07 16:21:16 xanni Exp $
+# $Id: zizl,v 0.2 1999/01/26 03:44:02 xanni Exp $
 #
 # $Log: zizl,v $
+# Revision 0.2  1999/01/26 03:44:02  xanni
+# Rewrote code to generate HTML directly
+#
 # Revision 0.1  1999/01/07 16:21:16  xanni
 # First prototype
 #
@@ -35,11 +38,8 @@
 use integer;
 use strict;
 use POSIX;
-use HTML::Table; # Available at http://www.cpan.org/modules/by-module/HTML
-		 # Note: if you are using HTML-Table-v0.90 you will need to
-		 # apply the supplied Table.patch before installing it
 
-use ZigZag;
+use Zigzag;
 
 # Note: We are using the following coding conventions:
 # Constants are named in ALLCAPS
@@ -51,8 +51,8 @@ use ZigZag;
 # Use the $TRUE and $FALSE constants instead of "1" and "0"
 
 # Define constants
-#my ($VERSION) = q$Revision: 0.1 $ =~ /([\d\.]+)/;
-my $VERSION = q$Id: zizl,v 0.1 1999/01/07 16:21:16 xanni Exp $;
+#my ($VERSION) = q$Revision: 0.2 $ =~ /([\d\.]+)/;
+my $VERSION = q$Id: zizl,v 0.2 1999/01/26 03:44:02 xanni Exp $;
 my $FALSE = 0;
 my $TRUE = !$FALSE;
 my $BGCOLOR = "#FFFFFF";	# White background
@@ -60,7 +60,7 @@ my $CELLS_PER_WIN = 5;          # Number of cells displayed across each window
 my $COMMAND_SYNC_COUNT = 20;    # Sync the DB after this many commands
 
 # Declare globals
-my $ZigZag_Terminated;          # True when interrupted by a signal
+my $Zigzag_Terminated;          # True when interrupted by a signal
 
 # Initialise global zigzag data structures
 my %Keymap_Directions =
@@ -143,7 +143,7 @@ my %Keymap =
     meta_key("v")	=> 'display_status_draw(version());',
     "X"			=> 'view_rotate(0, "X");',
     "x"			=> 'view_rotate(1, "X");',
-    "\cX"		=> '$ZigZag_Terminated = "^X";',
+    "\cX"		=> '$Zigzag_Terminated = "^X";',
     meta_key("X")	=> 'view_flip(0, "X");',
     meta_key("x")	=> 'view_flip(1, "X");',
     "Y"			=> 'view_rotate(0, "Y");',
@@ -163,7 +163,7 @@ my %Keymap =
 
 sub version()
 {
-  return "zizzle version $VERSION (ZigZag $ZigZag::VERSION)";
+  return "zizl version $VERSION (Zigzag $Zigzag::VERSION)";
 }
 
 sub meta_key($)
@@ -238,10 +238,10 @@ sub display_dirty()
 # of it.
 # Named: display_draw_*
 #
-sub html_table_cell($$$$)
-# Draw cell at row and column
+sub html_table_cell($)
+# Draw cell contents
 {
-  my ($table, $cell, $row, $col) = @_;
+  my ($cell) = @_;
   my $cursor = $ZZ{"$cell+d.cursor"} unless defined $ZZ{"$cell-d.cursor"};
   my $number = -1;
   my $content;
@@ -254,21 +254,18 @@ sub html_table_cell($$$$)
   $content =~ s/</&lt;/g;
   $content =~ s/\n/<BR>\n/g;
   $content = "<FONT COLOR=#FFFFFF>$content</FONT>" if is_selected($cell);
-  $row = $Vcells + ($row * 2);
-  $col = $Hcells + ($col * 2);
-  $table->setCell($row, $col, $content);
-  $table->setCellBGColor($row, $col, $BGCOLOR);
-
-  $table->setCellBGColor($row, $col, "#FFFF00") if is_clone($cell);
-  $table->setCellBGColor($row, $col, "#000000") if is_selected($cell);
-  $table->setCellBGColor($row, $col, "#00FF00") if $number == 1;
-  $table->setCellBGColor($row, $col, "#7F7FFF") if $number > 1;
+  my $bgcolor = $BGCOLOR;
+  $bgcolor = "#FFFF00" if is_clone($cell);
+  $bgcolor = "#000000" if is_selected($cell);
+  $bgcolor = "#00FF00" if $number == 1;
+  $bgcolor = "#7F7FFF" if $number > 1;
+  return "<TD BGCOLOR=$bgcolor>$content</TD>";
 }
 
-sub html_table_quad($$)
+sub html_table_quad($)
 # Draw a quad cell
 {
-  my ($table, $cell) = @_;
+  my ($cell) = @_;
   my $contents = "";
 #  my $width = ($COLS / 2 - 1) - $Window_Xcentre;
 #  # $maxlen = the maximum amount of cell contents we'll have room to display
@@ -296,50 +293,68 @@ sub html_table_quad($$)
 #            display_monospace($_, $width), $width);
 #    attrset($win, A_NORMAL);
 #  }
-}
-
-sub html_table_link_horizontal($$$)
-# Draw a horizontal connection next to a cell
-{
-  my ($table, $y, $x) = @_;
-
-  $x = $Hcells + ($x * 2) + (($x > 0) ? -1 : 1);
-  $y = $Vcells + $y * 2;
-  $table->setCell($y, $x, "---");
-}
-
-sub html_table_link_vertical($$$)
-# Draw a vertical connection above or below a cell
-{
-  my ($table, $y, $x) = @_;
-
-  $x = $Hcells + $x * 2;
-  $y = $Vcells + ($y * 2) + (($y > 0) ? -1 : 1);
-  $table->setCell($y, $x, "|");
-  $table->setCellAlign($y, $x, "CENTER");
+  return "<TD BGCOLOR=$BGCOLOR>$contents</TD>";
 }
 
 sub html_table_layout($$$)
 # Draw given display window from a layout
 {
-  my ($table, $lref, $quad) = @_;
-  my ($x, $y);
+  my ($guide, $lref, $quad) = @_;
+  my ($i, $j);
+  my $table;
 
-  for ($y = -int($Vcells / 2); $y <= int($Vcells / 2); $y++)
+  for ($j = -$Vcells + 1; $j < $Vcells; $j++)
   {
-    for ($x = -int($Hcells / 2); $x <= int($Hcells / 2); $x++)
+    $table .= "<TR>";
+    for ($i = -$Hcells + 1; $i < $Hcells; $i++)
     {
-      if ($quad && ($x == 0) && ($y == 0))
-      { html_table_quad($table, $$lref{"0,0"}); }
-      elsif (!$quad || ($x < 0) || ($y < 0))
+      if ($i == (-$Hcells + 1) && $j == (-$Vcells + 1))
+      { $table .= "<TD>$guide</TD>"; }
+      elsif ($quad && ($i == 0) && ($j == 0))
+      { $table .= html_table_quad($$lref{"0,0"}); }
+      elsif (!$quad || ($i < 0) || ($j < 0))
       {
-        my $cell = $$lref{"$x,$y"};
-        html_table_cell($table, $cell, $y, $x) if defined $cell;
-        html_table_link_horizontal($table, $y, $x) if defined $$lref{"$x-$y"};
-        html_table_link_vertical($table, $y, $x) if defined $$lref{"$x|$y"};
+        if ($i % 2)
+        {
+          if ($j % 2)
+          { $table .= "<TD></TD>"; }
+          else
+          {
+            my $x = int($i / 2) + $i % 2;
+            my $y = int($j / 2) + $j % 2;
+            if (defined $$lref{"$x-$y"})
+            { $table .= "<TD>---</TD>"; }
+            else
+            { $table .= "<TD></TD>"; }
+          }
+        }
+        else
+        {
+          if ($j % 2)
+          {
+            my $x = int($i / 2) + $i % 2;
+            my $y = int($j / 2) + $j % 2;
+            if (defined $$lref{"$x|$y"})
+            { $table .= "<TD ALIGN=CENTER>|</TD>"; }
+            else
+            { $table .= "<TD></TD>"; }
+          }
+          else
+          {
+            my $x = int($i / 2);
+            my $y = int($j / 2);
+            my $cell = $$lref{"$x,$y"};
+            if (defined $cell)
+            { $table .= html_table_cell($cell); }
+            else
+            { $table .= "<TD></TD>"; }
+          }
+        }
       }
     }
+    $table .= "</TR>\n";
   }
+  return $table;
 }
 
 sub html_layout_window($)
@@ -363,9 +378,8 @@ sub html_layout_window($)
   print "<HTML><HEAD><TITLE>Zizzle: $name Window</TITLE></HEAD>\n";
   print "<BODY BGCOLOR=\"#C0C0C0\"><CENTER>\n";
 #  print"<H1>$name Window ($raster)</H1>\n";
-  my $table = new HTML::Table($Vcells * 2 - 1, $Hcells * 2 - 1);
-  $table->setCaption("$name Window ($raster)", "TOP");
-  $table->setCellPadding(5);
+  print "<TABLE CELLPADDING=5>\n";
+  print "<CAPTION ALIGN=TOP>$name Window ($raster)</CAPTION>\n";
 
 #  if ($USE_STATUSBAR)
 #  {
@@ -377,14 +391,6 @@ sub html_layout_window($)
 #      if (defined $Input_Buffer) && ($number == 0);
 #    addstr($win, $LINES - 1, int($COLS / 2) - length($cell) - 3, " $cell ");
 #  }
-
-  # Display window contents.
-  my %layout;
-  if ($raster =~ /^H/)
-  { layout_Hraster(\%layout, $cell, $right, $down); }
-  else
-  { layout_Iraster(\%layout, $cell, $right, $down); }
-  html_table_layout($table, \%layout, $quad);
 
   # Display dimension guide
 #  my $guide =	"<FONT COLOR=\"#FF0000\"><PRE>" .
@@ -399,9 +405,16 @@ sub html_layout_window($)
 		"<BR>$out</FONT></TD></TR>\n" .
 		"<TR><TD><FONT COLOR=\"#FF0000\">$down</FONT></TD>" .
 		"</TR></TABLE>\n";
-  $table->setCell(1, 1, $guide);
 
-  $table->print;
+  # Display window contents.
+  my %layout;
+  if ($raster =~ /^H/)
+  { layout_Hraster(\%layout, $cell, $right, $down); }
+  else
+  { layout_Iraster(\%layout, $cell, $right, $down); }
+  print html_table_layout($guide, \%layout, $quad);
+
+  print "</TABLE>\n";
   print "</BODY></HTML>\n";
 }
 
@@ -443,7 +456,7 @@ sub input_get_direction()
 
 sub catchsig()
 # Handle fatal signals
-{ $ZigZag_Terminated = $_[0]; }
+{ $Zigzag_Terminated = $_[0]; }
 
 sub user_error($$)
 # Handle user errors
@@ -510,8 +523,8 @@ html_layout_window(1);
 display_close();
 db_close();
 die if $@;
-print STDERR "Terminated by $ZigZag_Terminated signal\n" 
-  if $ZigZag_Terminated;
+print STDERR "Terminated by $Zigzag_Terminated signal\n" 
+  if $Zigzag_Terminated;
 
 #
 # End.
