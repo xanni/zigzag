@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-# Xanadu(R) DIMENSIA(tm) Hyperstructure Kit, $Revision: 0.53 $
+# Xanadu(R) DIMENSIA(tm) Hyperstructure Kit, $Revision: 0.54 $
 #
 # Designed by Ted Nelson
 # Programmed by Andrew Pam ("xanni") and Bek Oberin ("gossamer")
@@ -25,9 +25,17 @@
 # ===================== Change Log
 #
 # Inital zigzag implementation
-# $Id: zigzag,v 0.53 1998/08/31 22:17:33 xanni Exp $
+# $Id: zigzag,v 0.54 1998/10/08 03:56:21 xanni Exp $
 #
 # $Log: zigzag,v $
+# Revision 0.54  1998/10/08 03:56:21  xanni
+# Incorporate Gossamer's changes, fix $TEMP_FILE problem
+#
+# Revision 0.53.0.1  1998/09/07 11:05:54  gossamer
+# Added 'm' to show marked cells, like 'c' for clone
+# Added status bar update when marking cells
+# Added dimension_exists() and dimension_is_essential()
+#
 # Revision 0.53  1998/08/31 22:17:33  xanni
 # Code cleanup, implemented view_reset()
 #
@@ -69,8 +77,8 @@ use File::Copy qw(copy);
 # Put brackets around all function arguments.
 
 # Define constants
-#my ($VERSION) = q$Revision: 0.53 $ =~ /([\d\.]+)/;
-my $VERSION = q$Id: zigzag,v 0.53 1998/08/31 22:17:33 xanni Exp $;
+#my ($VERSION) = q$Revision: 0.54 $ =~ /([\d\.]+)/;
+my $VERSION = q$Id: zigzag,v 0.54 1998/10/08 03:56:21 xanni Exp $;
 my $FALSE = 0;
 my $TRUE = not $FALSE;
 my $CELLS_PER_WIN = 5;           # Number of cells displayed across each window
@@ -82,7 +90,7 @@ my $EDITOR = "/bin/joe";
    $EDITOR = "/usr/local/bin/mule" if -x "/usr/local/bin/mule";
    $EDITOR = "/usr/X11R6/bin/gvim -f" if -x "/usr/X11R6/bin/gvim";
 my $FILENAME = "zigzag.data";    # Default filename for initial slice
-my $TEMP_FILE = "/tmp/zigzag";   # Filename used for external editing
+my $TEMP_FILE = "/tmp/zigzag-$<-$^T"; # Filename used for external editing
 my $LOTS_OF_COLOURS = $TRUE;     # What style
 my $USE_STATUSBAR = $TRUE;       # Are we using the status bar?
 my $ZZMAIL_SUPPORT = $FALSE;	 # Enable preliminary ZZmail support
@@ -403,7 +411,6 @@ sub wordbreak($$)
   return $_;
 }
 
-
 #
 # Testing cell type
 # Named is_*
@@ -420,8 +427,31 @@ sub is_clone($)
    return (defined($ZZ{"$cell-d.clone"}) || defined($ZZ{"$cell+d.clone"}));
 }
 
+sub is_marked($)
+{
+  my $cell = shift;
+  return (defined($ZZ{"$cell-d.mark"}) || defined($ZZ{"$cell+d.mark"}));
+}
+
+
 #
-# Retreiving Information
+# People aren't allowed to delete essential dimensions!
+#
+sub dimension_is_essential($)
+{
+  my $dim = shift;
+  return ($dim =~ m/.?d\.(cursor|clone|1|2|3|inside|contents|mark)/);
+}
+
+sub dimension_exists($)
+{
+  my $dim = shift;
+  # XXX todo
+  return 1;
+}
+
+#
+# Retrieving Information
 # Named get_*
 #
 sub get_lastcell($$)
@@ -820,6 +850,9 @@ sub atcursor_mark($)
   my $new = $ZZ{"n"}++;
   $ZZ{$new} = "mark";
   &cell_insert($new, $cell, "+d.mark");
+  &status_draw("Marked cell $cell");
+  #&cursor_move_dimension($curs, "+d.mark");
+
 
   foreach (@Window_Dirty)
   {
@@ -1266,6 +1299,10 @@ sub window_draw($$)
   if (!$LOTS_OF_COLOURS && &is_clone($cell))
   { addch($win, $row - 1, $col, "c"); }
 
+  # Display marked-cell flag if we aren't using lots of colours
+  if (!$LOTS_OF_COLOURS && &is_marked($cell))
+  { addch($win, $row - 1, $col, "m"); }
+
   # Display dimension guide
   addstr($win, 1, 1, "+---> $right ");
   addstr($win, 2, 1, "|\\   ");
@@ -1472,6 +1509,10 @@ sub window_draw_cell($$$$)
   # Clone cells get a special colour in high-colour mode
   attron($win, COLOR_PAIR(2) | A_BOLD) 
     if $LOTS_OF_COLOURS && &is_clone($cell);
+  # Ditto marked cells
+  attron($win, COLOR_PAIR(3) | A_BOLD) 
+    if $LOTS_OF_COLOURS && &is_marked($cell);
+
   # Colour/highlight the cursors
   attron($win, $Display_Has_Colour ? COLOR_PAIR(6) : A_UNDERLINE) if $number == 1;
   attron($win, $Display_Has_Colour ? COLOR_PAIR(7) : A_REVERSE) if $number > 1;
