@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-# Xanadu(R) DIMENSIA(tm) Hyperstructure Kit, $Revision: 0.56 $
+# Xanadu(R) DIMENSIA(tm) Hyperstructure Kit, $Revision: 0.57 $
 #
 # Designed by Ted Nelson
 # Programmed by Andrew Pam ("xanni") and Bek Oberin ("gossamer")
@@ -25,19 +25,27 @@
 # ===================== Change Log
 #
 # Inital zigzag implementation
-# $Id: zigzag,v 0.56 1998/11/18 09:16:42 xanni Exp $
+# $Id: zigzag,v 0.57 1998/11/18 14:21:34 xanni Exp $
 #
 # $Log: zigzag,v $
+# Revision 0.57  1998/11/18 14:21:34  xanni
+# Incorporated megapatch from Mark-Jason Dominus which implements
+# multiple selections and the shear operation.  Replaced atrocious
+# get_links_from() function with new get_links_to() function plus
+# substantial miscellaneous cleanup (formatting, spelling, docs and code).
+# Renamed cells_import() and cells_export() functions to atcursor_import()
+# and atcursor_export() respectively.
+#
 # Revision 0.56  1998/11/18 09:16:42  xanni
-# Change function call syntax (remove ampersands) and incorporate
+# Changed function call syntax (removed ampersands) and incorporated
 # bug fixes from Mark-Jason Dominus <mjd@plover.com>
 #
 # Revision 0.55  1998/10/26 05:37:32  xanni
-# Change default file extension and incorporate $EDITOR selection patch
+# Changed default file extension and incorporated $EDITOR selection patch
 # from Mark-Jason Dominus <mjd@plover.com>
 #
 # Revision 0.54  1998/10/08 03:56:21  xanni
-# Incorporate Gossamer's changes, fix $TEMP_FILE problem
+# Incorporated Gossamer's changes, fixed $TEMP_FILE problem
 #
 # Revision 0.53.0.1  1998/09/07 11:05:54  gossamer
 # Added 'm' to show marked cells, like 'c' for clone
@@ -76,19 +84,23 @@ use File::Copy qw(copy);
 *display_clear = *Curses::clear;
 *display_refresh = *Curses::refresh;
 
-# Note: We are using the following naming convention:
+# Note: We are using the following coding conventions:
 # Constants are named in ALLCAPS
 # Global variables are named with Initial Caps
 # Local variables and functions are named in lowercase
-# Put brackets around all function arguments.
+# Put brackets around all function arguments
+# Prototype the number and type of arguments expected by functions
+# Matching braces should line up with each other vertically
+# Use the $TRUE and $FALSE constants instead of "1" and "0"
 
 # Define constants
-#my ($VERSION) = q$Revision: 0.56 $ =~ /([\d\.]+)/;
-my $VERSION = q$Id: zigzag,v 0.56 1998/11/18 09:16:42 xanni Exp $;
+#my ($VERSION) = q$Revision: 0.57 $ =~ /([\d\.]+)/;
+my $VERSION = q$Id: zigzag,v 0.57 1998/11/18 14:21:34 xanni Exp $;
 my $FALSE = 0;
-my $TRUE = not $FALSE;
+my $TRUE = !$FALSE;
 my $CELLS_PER_WIN = 5;           # Number of cells displayed across each window
 my $CURSOR_HOME = 10;            # NOTE!  This assumes it stays fixed!
+my $SELECT_HOME = 21;            # NOTE!  This assumes it stays fixed!
 my $DELETE_HOME = 99;            # NOTE!  This assumes it stays fixed!
 my $EDITOR = choose_editor();    
 my $FILENAME = "zigzag.zz";      # Default filename for initial slice
@@ -115,92 +127,98 @@ my $Command_Count;               # Counts commands between DB syncs
 my $DB_Ref;                      # We use this for sync'ing.
 
 # Initialise global zigzag data structures
-my %Keymap_Directions = ( # Direction key mappings
-   "s"                => "0L",
-   "S"                => "0L",
-   "f"                => "0R",
-   "F"                => "0R",
-   "e"                => "0U",
-   "E"                => "0U",
-   "c"                => "0D",
-   "C"                => "0D",
-   "d"                => "0I",
-   "D"                => "0O",
-   "j"                => "1L",
-   "J"                => "1L",
-   &KEY_LEFT          => "1L",
-   "l"                => "1R",
-   "L"                => "1R",
-   &KEY_RIGHT         => "1R",
-   "i"                => "1U",
-   "I"                => "1U",
-   &KEY_UP            => "1U",
-   ","                => "1D",
-   &KEY_DOWN          => "1D",
-   "k"                => "1I",
-   &KEY_PPAGE         => "1I",
-   "K"                => "1O",
-   &KEY_NPAGE         => "1O",
-);
+my %Keymap_Directions =
+  ( # Direction key mappings
+    "s"		=> "0L",
+    "S"		=> "0L",
+    "f"		=> "0R",
+    "F"		=> "0R",
+    "e"		=> "0U",
+    "E"		=> "0U",
+    "c"		=> "0D",
+    "C"		=> "0D",
+    "d"		=> "0I",
+    "D"		=> "0O",
+    "j"		=> "1L",
+    "J"		=> "1L",
+    &KEY_LEFT	=> "1L",
+    "l"		=> "1R",
+    "L"		=> "1R",
+    &KEY_RIGHT	=> "1R",
+    "i"		=> "1U",
+    "I"		=> "1U",
+    &KEY_UP	=> "1U",
+    ","		=> "1D",
+    &KEY_DOWN	=> "1D",
+    "k"		=> "1I",
+    &KEY_PPAGE	=> "1I",
+    "K"		=> "1O",
+    &KEY_NPAGE	=> "1O",
+  );
 
-my %Keymap = (  # Keyboard mappings
-   "\r"               => 'atcursor_execute(0);',
-   "\n"               => 'atcursor_execute(0);',
-   "<"                => '@_ = input_get_direction(); cells_import(@_) if $_[0];',
-   ">"                => '@_ = input_get_direction(); cells_export(@_) if $_[0];',
-   chr(127)           => 'atcursor_delete(1);',
-   &KEY_DC            => 'atcursor_delete(1);',
-   &KEY_BACKSPACE     => 'input_process_backspace();',
-   meta_key("s")      => 'atcursor_hop(0, "L");',
-   meta_key("f")      => 'atcursor_hop(0, "R");',
-   meta_key("e")      => 'atcursor_hop(0, "U");',
-   meta_key("c")      => 'atcursor_hop(0, "D");',
-   meta_key("D")      => 'atcursor_edit(0);',
-   meta_key("d")      => 'atcursor_edit(0);',
-   "\cD"              => 'atcursor_edit(0);',
-   meta_key("j")      => 'atcursor_hop(1, "L");',
-   meta_key("l")      => 'atcursor_hop(1, "R");',
-   meta_key("i")      => 'atcursor_hop(1, "U");',
-   meta_key(",")      => 'atcursor_hop(1, "D");',
-   meta_key("K")      => 'atcursor_edit(1);',
-   meta_key("k")      => 'atcursor_edit(1);',
-   "\cK"              => 'atcursor_edit(1);',
-   "b"                => '@_ = input_get_direction(); atcursor_break_link(@_) if $_[0];',
-   "G"                => 'cursor_jump(get_cursor(0));',
-   "g"                => 'cursor_jump(get_cursor(1));',
-   &KEY_HOME          => 'cursor_jump(get_cursor(1));',
-   "h"                => '@_ = input_get_direction(); atcursor_hop(@_) if $_[0];',
-   "N"                => 'cell_create(0);',
-   &KEY_IC            => 'cell_create(0);',
-   "n"                => 'cell_create(1);',
-   "M"                => 'atcursor_mark(0);',
-   "m"                => 'atcursor_mark(1);',
-   "Q"                => 'view_quadrant_toggle(0);',
-   "q"                => 'view_quadrant_toggle(1);',
-   "R"		      => 'view_reset(0);',
-   "r"		      => 'view_reset(1);',
-   "\cR"	      => 'display_refresh(curscr()); $@ = "";',
-   "T"                => 'atcursor_clone(0);',
-   "t"                => 'atcursor_clone(1);',
-   "V"                => 'view_raster_toggle(0);',
-   "v"                => 'view_raster_toggle(1);',
-   "\cV"	      => 'status_draw(version()); $StatusTimer = 20;',
-   meta_key("V")      => 'status_draw(version()); $StatusTimer = 20;',
-   meta_key("v")      => 'status_draw(version()); $StatusTimer = 20;',
-   "X"                => 'view_rotate(0, "X");',
-   "x"                => 'view_rotate(1, "X");',
-   "\cX"	      => '$ZigZag_Terminated = "^X";',
-   meta_key("X")      => 'view_flip(0, "X");',
-   meta_key("x")      => 'view_flip(1, "X");',
-   "Y"                => 'view_rotate(0, "Y");',
-   "y"                => 'view_rotate(1, "Y");',
-   meta_key("Y")      => 'view_flip(0, "Y");',
-   meta_key("y")      => 'view_flip(1, "Y");',
-   "Z"                => 'view_rotate(0, "Z");',
-   "z"                => 'view_rotate(1, "Z");',
-   meta_key("Z")      => 'view_flip(0, "Z");',
-   meta_key("z")      => 'view_flip(1, "Z");',
-);
+my %Keymap =
+  ( # Keyboard mappings
+    "\r"		=> 'atcursor_execute(0);',
+    "\n"		=> 'atcursor_execute(0);',
+    "<"			=> '@_ = input_get_direction(); atcursor_import(@_) if $_[0];',
+    ">"			=> '@_ = input_get_direction(); atcursor_export(@_) if $_[0];',
+    chr(127)		=> 'atcursor_delete(1);',
+    &KEY_DC		=> 'atcursor_delete(1);',
+    &KEY_BACKSPACE	=> 'input_process_backspace();',
+    meta_key("s")	=> 'atcursor_hop(0, "L");',
+    meta_key("f")	=> 'atcursor_hop(0, "R");',
+    meta_key("e")	=> 'atcursor_hop(0, "U");',
+    meta_key("c")	=> 'atcursor_hop(0, "D");',
+    meta_key("D")	=> 'atcursor_edit(0);',
+    meta_key("d")	=> 'atcursor_edit(0);',
+    "\cD"		=> 'atcursor_edit(0);',
+    meta_key("j")	=> 'atcursor_hop(1, "L");',
+    meta_key("l")	=> 'atcursor_hop(1, "R");',
+    meta_key("i")	=> 'atcursor_hop(1, "U");',
+    meta_key(",")	=> 'atcursor_hop(1, "D");',
+    meta_key("K")	=> 'atcursor_edit(1);',
+    meta_key("k")	=> 'atcursor_edit(1);',
+    "\cK"		=> 'atcursor_edit(1);',
+    "b"			=> '@_ = input_get_direction(); atcursor_break_link(@_) if $_[0];',
+    "G"			=> 'cursor_jump_input(get_cursor(0));',
+    "g"			=> 'cursor_jump_input(get_cursor(1));',
+    &KEY_HOME		=> 'cursor_jump_input(get_cursor(1));',
+    "h"			=> '@_ = input_get_direction(); atcursor_hop(@_) if $_[0];',
+    "\cL"		=> 'display_refresh(curscr()); $@ = "";',
+    "M"			=> 'atcursor_select(0);',
+    "m"			=> 'atcursor_select(1);',
+    meta_key("m")	=> 'rotate_selection()',
+    meta_key("M")	=> 'push_selection()',
+    "N"			=> 'cell_create(0);',
+    &KEY_IC		=> 'cell_create(0);',
+    "n"			=> 'cell_create(1);',
+    "Q"			=> 'view_quadrant_toggle(0);',
+    "q"			=> 'view_quadrant_toggle(1);',
+    "R"			=> 'view_reset(0);',
+    "r"			=> 'view_reset(1);',
+    "T"			=> 'atcursor_clone(0);',
+    "t"			=> 'atcursor_clone(1);',
+    meta_key("T")	=> 'atcursor_copy(0);',
+    meta_key("t")	=> 'atcursor_copy(1);',
+    "V"			=> 'view_raster_toggle(0);',
+    "v"			=> 'view_raster_toggle(1);',
+    "\cV"		=> 'status_draw(version()); $StatusTimer = 20;',
+    meta_key("V")	=> 'status_draw(version()); $StatusTimer = 20;',
+    meta_key("v")	=> 'status_draw(version()); $StatusTimer = 20;',
+    "X"			=> 'view_rotate(0, "X");',
+    "x"			=> 'view_rotate(1, "X");',
+    "\cX"		=> '$ZigZag_Terminated = "^X";',
+    meta_key("X")	=> 'view_flip(0, "X");',
+    meta_key("x")	=> 'view_flip(1, "X");',
+    "Y"			=> 'view_rotate(0, "Y");',
+    "y"			=> 'view_rotate(1, "Y");',
+    meta_key("Y")	=> 'view_flip(0, "Y");',
+    meta_key("y")	=> 'view_flip(1, "Y");',
+    "Z"			=> 'view_rotate(0, "Z");',
+    "z"			=> 'view_rotate(1, "Z");',
+    meta_key("Z")	=> 'view_flip(0, "Z");',
+    meta_key("z")	=> 'view_flip(1, "Z");',
+  );
 
 sub initial_geometry()
 {
@@ -238,6 +256,7 @@ sub initial_geometry()
    10 =>        "Cursor home",
       "10+d.1" =>	1,
       "10+d.2" =>	11,
+      "10-d.1" =>	21,
    11 =>        "Action",
       "11+d.1" =>	12,
       "11-d.2" =>	10,
@@ -270,6 +289,10 @@ sub initial_geometry()
       "19+d.1" =>	20,
    20 =>        "I",
       "20-d.1" =>	19,
+   21 => "Selection",
+      "21+d.1" =>       10, 
+      "21+d.2" =>       21, 
+      "21-d.2" =>       21, 
    30 =>        "#Edit\natcursor_edit(1);",
       "30+d.1" =>	35,
       "30-d.2" =>	0,
@@ -315,9 +338,15 @@ sub initial_geometry()
       "55+d.1" =>	56,
    56 =>        "#O-break\natcursor_break_link(1, 'O');",
       "56-d.1" =>	55,
-   60 =>        "#Mark\natcursor_mark(1);",
+   60 =>        "#Select\natcursor_select(1);",
       "60-d.2" =>	50,
       "60+d.2" =>	70,
+      "60+d.1" =>       61,
+   61 =>        "#Rot.Selection\nrotate_selection();",
+      "61-d.1" =>       60,
+      "61+d.1" =>       62,
+   62 =>	"#Push Selection\npush_selection();",
+      "62-d.1" =>	61,
    70 =>        "#L-Hop\natcursor_hop(1, 'L');",
       "70+d.1" =>	71,
       "70-d.2" =>	60,
@@ -336,9 +365,18 @@ sub initial_geometry()
       "74+d.1" =>	75,
    75 =>        "#O-Hop\natcursor_hop(1, 'O');",
       "75-d.1" =>	74,
-   80 =>        "#Shear",
+   80 =>        "#Shear -^\natcursor_shear(1, 'D', 'L')",
       "80-d.2" =>	70,
       "80+d.2" =>	85,
+      "80+d.1" =>       81,
+   81 =>        "#Shear -v\natcursor_shear(1, 'U', 'L')",
+      "81-d.1" =>       80,
+      "81+d.1" =>       82,
+   82 =>        "#Shear ^+\natcursor_shear(1, 'D', 'R')",
+      "82-d.1" =>       81,
+      "82+d.1" =>       83,
+   83 =>        "#Shear v+\natcursor_shear(1, 'U', 'R')",
+      "83-d.1" =>       82,
    85 =>        "#Chug",
       "85-d.2" =>	80,
       "85+d.2" =>	90,
@@ -375,26 +413,25 @@ sub initial_geometry()
    );
 }
 
-
 #
 # Some helper functions
 #
 
 sub version()
 {
-   return "ZigZag version $VERSION";
+  return "ZigZag version $VERSION";
 }
 
 sub meta_key($)
 # This is just a little helper macro, returns the META/ALT key code
 { 
-   return(chr(ord($_[0]) + 128)); 
+  return(chr(ord($_[0]) + 128)); 
 }
 
 sub reverse_sign($)
 # Reverse the sign of the given cursor/dimension
 {
-   return ((substr($_[0], 0, 1) eq "+") ? "-" : "+") . substr($_[0], 1);
+  return ((substr($_[0], 0, 1) eq "+") ? "-" : "+") . substr($_[0], 1);
 }
 
 sub wordbreak($$)
@@ -403,13 +440,9 @@ sub wordbreak($$)
 {
   $_ = substr($_[0], 0, $_[1]);
   if (/^(.*)\n/)
-  {
-     $_ = "$1 ";
-  }
+  { $_ = "$1 "; }
   elsif ((length eq $_[1]) && /^(.+)\s+\S*$/)
-  {
-     $_ = $1;
-  }
+  { $_ = $1; }
   return $_;
 }
 
@@ -419,20 +452,29 @@ sub wordbreak($$)
 #
 sub is_cursor($)
 {
-   my $cell = shift;
-   return (defined($ZZ{"$cell-d.cursor"}) || defined($ZZ{"$cell+d.cursor"}));
+  my $cell = shift;
+  return (defined($ZZ{"$cell-d.cursor"}) || defined($ZZ{"$cell+d.cursor"}));
 }
 
 sub is_clone($)
 {
-   my $cell = shift;
-   return (defined($ZZ{"$cell-d.clone"}) || defined($ZZ{"$cell+d.clone"}));
+  my $cell = shift;
+  return (defined($ZZ{"$cell-d.clone"}) || defined($ZZ{"$cell+d.clone"}));
 }
 
-sub is_marked($)
+sub is_selected($)
 {
   my $cell = shift;
-  return (defined($ZZ{"$cell-d.mark"}) || defined($ZZ{"$cell+d.mark"}));
+  my $headcell = get_lastcell($cell, '-d.mark');
+  return $headcell != $cell
+    && defined get_distance($headcell, "+d.2", $SELECT_HOME);
+}
+
+sub is_active_selected($)
+{
+  my $cell = shift;
+  my $headcell = get_lastcell($cell, '-d.mark');
+  return $headcell == $SELECT_HOME && $headcell != $cell;
 }
 
 
@@ -449,13 +491,48 @@ sub dimension_exists($)
 {
   my $dim = shift;
   # XXX todo
-  return 1;
+  return $TRUE;
 }
+
 
 #
 # Retrieving Information
 # Named get_*
 #
+
+sub get_accursed($)
+# Get the cell that is accursed in the specified window
+# or by the specified cursor
+{
+  my $n = shift;
+  get_lastcell(get_cursor($n), "-d.cursor");
+}
+
+sub get_active_selection()
+{
+  get_selection(0);
+}
+
+sub get_selection($)
+# Get the $nth selection and return a list of cells
+{
+  my ($n) = @_;
+  my $sel;
+  for ($sel = $SELECT_HOME; $n && defined($sel); $n--)
+  { $sel = $ZZ{"$sel+d.2"}; }
+
+  cells_row($ZZ{"$sel+d.mark"}, "+d.mark");
+}
+
+sub get_which_selection($) 
+# Given a cell, get the headcell of the selection it is in, or undef
+# if it is not part of a selection
+{
+  my $cell = shift;
+  return undef unless defined $ZZ{"$cell-d.mark"};
+  get_lastcell($cell, "-d.mark");
+}
+
 sub get_lastcell($$)
 # Find the last cell along a given dimension
 {
@@ -466,6 +543,26 @@ sub get_lastcell($$)
   # Follow links to the end or until we return to where we started
   $cell = $_ while defined($_ = $ZZ{"$cell$dim"}) && ($_ != $_[0]);
   return $cell;
+}
+
+sub get_distance($$$)
+# Given cell A a direction, and cell B,
+# find out how far B is from A in the specified direction.
+# return undef if B cannot be reached from A in that direction
+{
+  my ($start, $dir, $end) = @_;
+  my $cell;
+
+  return 0 if $start == $end;
+
+  my $dist = 1;
+  for ($cell = $ZZ{"$start$dir"};
+       defined $cell && $cell != $end && $cell != $start;
+       $cell = $ZZ{"$cell$dir"}
+      )
+  { $dist++; }
+  return undef if !defined($cell) || $cell == $start;
+  return $dist;
 }
 
 sub get_outline_parent($)
@@ -518,9 +615,7 @@ sub get_cursor($)
 
   # Count to the numbered cursor
   for ($_ = 0; defined($cell) && ($_ <= $number); $_++)
-  {
-     $cell = $ZZ{"$cell+d.2"};
-  }
+  { $cell = $ZZ{"$cell+d.2"}; }
   die "No cursor $number" unless defined($cell);
   return $cell;
 }
@@ -535,37 +630,27 @@ sub get_dimension($$)
 
   $curs = $ZZ{"$curs+d.1"};
   if ($dir eq "L")
-  {
-     return reverse_sign($ZZ{$curs}); 
-  }
+  { return reverse_sign($ZZ{$curs}); }
   if ($dir eq "R")
-  {
-     return $ZZ{$curs}; 
-  }
+  { return $ZZ{$curs}; }
   $curs = $ZZ{"$curs+d.1"};
   if ($dir eq "U")
-  {
-     return reverse_sign($ZZ{$curs}); 
-  }
+  { return reverse_sign($ZZ{$curs}); }
   if ($dir eq "D")
-  {
-     return $ZZ{$curs}; 
-  }
+  { return $ZZ{$curs}; }
   $curs = $ZZ{"$curs+d.1"};
   if ($dir eq "I")
-  {
-     return reverse_sign($ZZ{$curs}); 
-  }
+  { return reverse_sign($ZZ{$curs}); }
   if ($dir eq "O")
-  {
-     return $ZZ{$curs}; 
-  }
+  { return $ZZ{$curs}; }
 }
 
 sub get_contained($)
 # Return list of cells "contained" within a cell
 # Performs a depth-first descend-only treewalk with loops broken
 # +d.inside is depth, +d.contents is width.
+# Sadly, this is broken because d.inside and d.contents
+# aren't actually meant to have the same semantics!
 {
   my %gen;
   my @stack;
@@ -627,16 +712,124 @@ sub get_contained($)
   return @_;
 }
 
+sub get_links_to($)
+# Returns a list of all the links back to the specified cell
+{
+  my $cell = $_[0];
+  my $index = $ZZ{"$CURSOR_HOME+d.1"}; # Dimension list is +d.1 from Cursor home
+  my @result;
+
+  do
+  {
+    my $dim = $ZZ{$index};
+    push @result, $ZZ{"$cell-$dim"} . "+$dim" if defined $ZZ{"$cell-$dim"};
+    push @result, $ZZ{"$cell+$dim"} . "-$dim" if defined $ZZ{"$cell+$dim"};
+    $index = $ZZ{"$index+d.2"};
+    die "Dimension list broken" unless defined $index;
+  } until $index = $ZZ{"CURSOR_HOME+d.1"};
+  return @result;
+}
+
+#
+# Multiple-cell operations
+# Named do_*
+#
+sub do_shear($$$;$$) 
+# Given a row of cells starting at $first_cell,
+# move them all $n cells in the $dir direction.
+# Cells that were linked in the $link direction
+# have their links broken and relinked to new cells.
+#
+# Before: do_shear(A1, d.1, d.2, 1);
+# 
+# ---> d.1
+# V d.2
+#
+# A1 --- B1 --- C1 --- D1 --- E1
+# |      |             |      |
+# A2 --- B2 --- C2 --- D2 --- E2
+#
+# After:
+#
+#        A1 --- B1 --- C1 --- D1 --- E1
+#        |      |             |
+# A2 --- B2 --- C2 --- D2 --- E2
+#
+# Optional fourth argument $n defaults to 1.
+# Optional fifth argument $hang says whether the cell on the end
+# should be linked back at the beginning or whether it should just
+# be left hanging.  $hang = false: Back at beginning.  
+# $hang = true: Leave hanging.  Default: false.
+{
+  my ($first_cell, $dir, $link, $n, $hang) = @_;
+  $n = 1 unless defined $n;
+  $hang = $FALSE unless defined $hang;
+
+  my $cell;
+  my ($prev_cell, $prev_linked);
+  my $first_linked = $ZZ{"$first_cell$link"};
+
+  my @shear_cells = cells_row($first_cell, $dir);
+  my @linked_cells = map {$ZZ{"$_$link"}} @shear_cells;
+
+  my @new_link = @linked_cells;
+  # Move some of these from the beginning
+  my @x = splice(@new_link, 0, $n);
+  # And put them back at the end.
+  push @new_link, @x;
+
+  my $i;
+  my $linkno = 0;
+  my $last_linked;
+  # Break all the links
+  for ($i=0; $i < @shear_cells; $i++)
+  {
+    my $old_link = $linked_cells[$i];
+    next unless defined $old_link;
+    my $shear_cell = $shear_cells[$i];
+    link_break($shear_cell, $old_link, $link);
+  }
+
+  $linkno = 0;
+  for ($i=0; $i < @shear_cells; $i++)
+  {
+    my $new_link = $new_link[$i];
+    next unless defined $new_link;
+    next if $i == $#shear_cells && $hang;
+    my $shear_cell = $shear_cells[$i];
+    link_make($shear_cell,  $new_link, $link);
+  }
+
+  foreach (@Window_Dirty)
+  { $_ = $TRUE; }
+}
 
 #
 # Functions that operate on links between cells
 # Named link_*
 #
-sub link_break($$$)
+sub link_break($$;$)
 # Break a link between two cells in a given dimension.
 # This should be the only way links are ever broken to ensure consistency.
+# Second argument is optional.  If present, it must be linked from cell 1
+# in the approprate dimension.
 {
-  my ($cell1, $cell2, $dim) = @_;
+  my ($cell1, $cell2, $dim);
+  if (@_ == 3)
+  { ($cell1, $cell2, $dim) = @_; }
+  else
+  { ($cell1, $dim) = @_; }
+  my ($linked_cell) = $ZZ{"$cell1$dim"};
+  if (defined $cell2)
+  {
+    die "$cell1 is not linked to $cell2 in dimension $dim"
+      unless $cell2 == $linked_cell;
+  }
+  else
+  {
+    $cell2 = $linked_cell; # Infer second argument
+  }
+
   die "No cell $cell1" unless defined $ZZ{"$cell1"};
   die "No cell $cell2" unless defined $ZZ{"$cell2"};
   die "Invalid direction $dim" unless ($dim =~ /^[+-]/);
@@ -730,15 +923,15 @@ sub cell_excise($$)
 sub cursor_move_dimension($$)
 # Move cursor along a given dimension
 #
-#                 Original state                  New state
-#                 --------------                -------------
-# | +d.cursor         old-----new                 old-----new
-# V dimension          |       |                  |       |
-#                 XXX         YYY                 XXX     YYY
-#                  |                          |       |
-#                $curs                         ZZZ    $curs
-#                  |
-#                 ZZZ
+#                 Original state                 New state
+#                 --------------               -------------
+# | +d.cursor      old-----new                  old-----new
+# V dimension       |       |                    |       |
+#                  XXX     YYY                  XXX     YYY
+#                   |                            |       |
+#                 $curs                         ZZZ    $curs
+#                   |
+#                  ZZZ
 #
 # NOTE: If there are many cursors it would be more efficient to insert the
 # cursor next to "new", but Ted prefers the visualisation that the most
@@ -758,34 +951,35 @@ sub cursor_move_dimension($$)
   cell_insert($curs, $cell, "+d.cursor");
 
   foreach (@Window_Dirty)
-  {
-     $_ = $TRUE;
-  }
+  { $_ = $TRUE; }
 }
 
-sub cursor_jump($)
+sub cursor_jump_input($)
 # Jump cursor to $Input_Buffer
+# Or to 0 if no input buffer.
 {
-  my $curs = $_[0];
-  $Input_Buffer = 0 if !defined $Input_Buffer;
+  my $dest = defined($Input_Buffer) ? $Input_Buffer : 0;
+  cursor_jump($_[0], $dest);
+  undef $Input_Buffer;
+}
+
+sub cursor_jump($$)
+# Jump cursor to specified destination
+{
+  my ($curs, $dest) = @_;
 
   # Must jump to a valid non-cursor cell
-  if (!defined $ZZ{$Input_Buffer} || defined $ZZ{"$Input_Buffer-d.cursor"})
-  {
-     user_error(3, $Input_Buffer);
-  }
+  if (!defined $ZZ{$dest} || defined $ZZ{"$dest-d.cursor"})
+  { user_error(3, $dest); }
   else
   {
     # Move the cursor
     cell_excise($curs, "d.cursor");
-    cell_insert($curs, get_lastcell($Input_Buffer, "+d.cursor"), "+d.cursor");
+    cell_insert($curs, get_lastcell($dest, "+d.cursor"), "+d.cursor");
 
     foreach (@Window_Dirty)
-    {
-       $_ = $TRUE;
-    }
+    { $_ = $TRUE; }
   }
-  undef $Input_Buffer;
   $Window_Dirty[0] = $TRUE;
 }
 
@@ -810,7 +1004,8 @@ sub atcursor_execute($)
 #    $_ = $ZZ{get_lastcell($cell, "-d.clone")};
     $_ = get_cell_contents($cell);
     $@ = "Cell does not start with #";	# Error in case eval isn't done
-    if (/^#/) {
+    if (/^#/)
+    {
       $DB_Ref->sync();
       $Command_Count = 0;   # Write cached data to file
       eval;
@@ -818,49 +1013,138 @@ sub atcursor_execute($)
     last if $@;
   }
   chomp $@;
-  if ($@) {
+  if ($@)
+  {
      user_error(4, $@);
-     return 0;
+     return $FALSE;
   }
 
-  return 1;
+  return $TRUE;
 }
 
-sub atcursor_clone($)
-# Create a new clone cell at a given cursor
+sub atcursor_clone($;$)
+# Clone all the cells in the current selection
+# If the current selection is empty, clone just the accursed cell.
+# Move the given cursor to the first of the new clones.
+# Optional second argument specifies which of several clone-ish operations
+# to perform.  Presently supported:  
+#  clone: as before
+#  copy: copy cells instead of cloning, and copy links also.
 {
   my $curs = get_cursor($_[0]);
-  my $cell = get_lastcell($curs, "-d.cursor");
+  my $op = $_[1] || 'clone';
+  my $last_new_cell;
 
-  my $new = $ZZ{"n"}++;
-  $ZZ{$new} = "Clone of $cell";
-  cell_insert($new, $cell, "+d.clone");
-  cursor_move_dimension($curs, "+d.clone");
+  my @selection = get_active_selection;
+  if (@selection == 0)
+  { @selection = (get_lastcell($curs, "-d.cursor")); }
+
+  my $cell;
+  my %new;
+  my %selected;
+  foreach $cell (@selection)
+  {
+    my $new = $ZZ{"n"}++;
+    $selected{$cell} = 'yup';
+    $new{$cell} = $new;
+    if ($op eq 'clone')
+    {
+      $ZZ{$new} = "Clone of $cell";
+      cell_insert($new, $cell, "+d.clone");
+    }
+    elsif ($op eq 'copy')
+    {
+      $ZZ{$new} = "Copy of " . $ZZ{$cell};
+    }
+    $last_new_cell = $new;
+  }
+
+  # duplicate exactly those links that are from one selected cell to another.
+  # FIXME: Needs to be rewritten to use get_links_to() and link_make()
+#  my @cell_links = get_links_from(@selection);
+#
+#  my $i;
+#  for ($i = 0; $i < @cell_links; $i++)
+#  {
+#    my @links = @{$cell_links[$i]};
+#    my $old = $selection[$i];
+#    my $new = $new{$old};
+#    my $dim;
+#    foreach $dim (@links)
+#    {
+#      # If the linked cell is selected, then copy the link
+#      if ($selected{$ZZ{"$old$dim"}})
+#      {
+#	$ZZ{"$new$dim"} = $new{$ZZ{"$old$dim"}};
+#	# Warning:  Doesn't use `link_make'.
+#      }
+#    }
+#  }
+
+  cursor_jump($curs, $last_new_cell);
 
   foreach (@Window_Dirty)
-  {
-     $_ = $TRUE;
-  }
+  { $_ = $TRUE; }
 }
 
-sub atcursor_mark($)
-# mark the current cell
+sub atcursor_copy($)
+# Convenience routine: See atcursor_clone
+{
+  atcursor_clone($_[0], 'copy');
+}
+
+sub atcursor_select($)
+# select or unselect the current cell
 {
   my $curs = get_cursor($_[0]);
   my $cell = get_lastcell($curs, "-d.cursor");
+  my $already_selected = is_selected($cell);
+  my $which_selection =  get_which_selection($cell) if $already_selected;
 
-  my $new = $ZZ{"n"}++;
-  $ZZ{$new} = "mark";
-  cell_insert($new, $cell, "+d.mark");
-  status_draw("Marked cell $cell");
+  cell_excise($cell, "d.mark");
+
+  # If it wasn't already selected in the active selection, deselect it.
+  # (The excise did this already, so we need only print a message.)
+  # Otherwise add it to the active selection and deliver a message.
+  if ($already_selected && $which_selection == $SELECT_HOME)
+  {
+    status_draw("Deselected cell $cell");      
+  }
+  else
+  {    
+    cell_insert($cell, $SELECT_HOME, "+d.mark");
+    status_draw("Selected cell $cell");
+  }
   #cursor_move_dimension($curs, "+d.mark");
 
-
   foreach (@Window_Dirty)
-  {
-     $_ = $TRUE;
-  }
+  { $_ = $TRUE; }
 }
+
+sub rotate_selection () 
+# Exchange the current selection with one of the saved selections.  If
+# there's an input buffer, it holds the number of the desired
+# selection, so shear all the selections +d.2ward by that many.
+# (Selection #0 is currently active.)  Otherwise, just shear by 1.
+{
+  my $shear_count = (defined($Input_Buffer) ? $Input_Buffer : 1);
+#  my $num_selections = cells_row($SELECT_HOME, "+d.2");
+  
+  do_shear($SELECT_HOME, '-d.2', '+d.mark', $shear_count);
+}
+
+sub push_selection()
+# Push the current selection onto the selection stack.
+# All saved selections move +d.2ward one step.
+# The current selection is now empty.
+{  
+  my $new_sel = $ZZ{"n"}++;
+  my $num_selections = cells_row($SELECT_HOME, "+d.2");
+  $ZZ{$new_sel} = "Selection #$num_selections";
+  cell_insert($new_sel, $SELECT_HOME, "+d.2");
+  do_shear($SELECT_HOME, "+d.2", "+d.mark", 1);
+}
+
 
 sub atcursor_insert($$)
 # Insert a new cell at a given cursor in a given direction
@@ -872,14 +1156,14 @@ sub atcursor_insert($$)
   if ($dim =~ /^[+-]d\.clone$/)
   {
      user_error(9);
-     return 0;
+     return $FALSE;
   }
 
   # Can't insert if it's the cursor dimension
   if ($dim =~ /^[+-]d\.cursor$/)
   {
      user_error(10);
-     return 0;
+     return $FALSE;
   }
 
   my $new = $ZZ{"n"}++;
@@ -887,9 +1171,7 @@ sub atcursor_insert($$)
   cell_insert($new, get_lastcell($curs, "-d.cursor"), $dim);
 
   foreach (@Window_Dirty)
-  {
-     $_ = $TRUE;
-  }
+  { $_ = $TRUE; }
 }
 
 sub atcursor_delete($)
@@ -898,39 +1180,31 @@ sub atcursor_delete($)
   my $curs = get_cursor($_[0]);
   my $cell = get_lastcell($curs, "-d.cursor");
   my $index = $ZZ{"$CURSOR_HOME+d.1"}; # Dimension list is +d.1 from Cursor home
-  my $done = $FALSE;
-  my $dim;
   my $neighbour;
 
   # Pass the torch if this cell has clone(s)
   if (!defined $ZZ{"$cell-d.clone"} && ($_ = $ZZ{"$cell+d.clone"}))
-  {
-     $ZZ{$_} = $ZZ{$cell};
-  }
+  { $ZZ{$_} = $ZZ{$cell}; }
 
-  while (!$done)
+  do
   {
-    $dim = $ZZ{$index};
-
+    my $dim = $ZZ{$index};
     # Try and find any valid non-cursor neighbour
     $neighbour = $_ unless defined $neighbour
-      || ((!defined($_ = $ZZ{"$cell-$dim"}) || 
-           ($_ eq $cell) || 
-           defined $ZZ{"$_-d.cursor"}) &&
-          (!defined($_ = $ZZ{"$cell+$dim"}) || 
-           ($_ eq $cell) || 
-           defined $ZZ{"$_-d.cursor"}));
+      || ((!defined($_ = $ZZ{"$cell-$dim"})
+          || ($_ eq $cell)
+          || defined $ZZ{"$_-d.cursor"})
+        && (!defined($_ = $ZZ{"$cell+$dim"})
+          || ($_ eq $cell)
+          || defined $ZZ{"$_-d.cursor"}));
 
     # Excise $cell from dimension $dim
     cell_excise($cell, $dim);
-  }
-  continue
-  {
+
     # Proceed to the next dimension
     $index = $ZZ{"$index+d.2"};
     die "Dimension list broken" unless defined $index;
-    $done = ($index == $ZZ{"$CURSOR_HOME+d.1"});
-  }
+  } until ($index == $ZZ{"$CURSOR_HOME+d.1"});
   $neighbour = 0 unless defined $neighbour;
 
   # Move $cell to the deleted stack
@@ -941,9 +1215,7 @@ sub atcursor_delete($)
   cell_insert($curs, $cell, "+d.cursor");
 
   foreach (@Window_Dirty)
-  {
-     $_ = $TRUE;
-  }
+  { $_ = $TRUE; }
 }
 
 sub atcursor_hop(@)
@@ -984,10 +1256,27 @@ sub atcursor_hop(@)
     link_make($neighbour, $cell, $dim);
     
     foreach (@Window_Dirty)
-    {
-       $_ = $TRUE;
-    }
+    { $_ = $TRUE; }
   }
+}
+
+sub atcursor_shear($$$)
+# Arguments: $curs = cursor/window number
+# $sheardir = direction and +/-
+# $linkdir = direction and +/-
+# directions name axes.  They get turned into dimensions
+# for the do_shear call.
+# Head cell of the shear is the accursed cell
+{
+  my ($number, $shear_dir, $link_dir) = @_;
+
+  my $cursor = get_cursor($number);
+  my $shear_dim = get_dimension($cursor, $shear_dir);
+  my $link_dim  = get_dimension($cursor, $link_dir);
+
+  my $headcell = get_accursed($number);
+
+  do_shear($headcell, $shear_dim, $link_dim, 1);
 }
 
 sub atcursor_edit($)
@@ -1040,9 +1329,7 @@ sub atcursor_make_link($$)
     undef $Input_Buffer;
 
     foreach (@Window_Dirty)
-    {
-       $_ = $TRUE;
-    }
+    { $_ = $TRUE; }
   }
 }
 
@@ -1066,18 +1353,11 @@ sub atcursor_break_link(@)
     link_break($cell, $_, $dim);
 
     foreach (@Window_Dirty)
-    {
-       $_ = $TRUE;
-    }
+    { $_ = $TRUE; }
   }
 }
 
-#
-# Functions that operate on groups of cells in a given dimension
-# Named: cells_*
-# (bad name?)
-#
-sub cells_import(@)
+sub atcursor_import(@)
 # Import cells from a text file
 {
   my $curs = get_cursor($_[0]);
@@ -1110,15 +1390,13 @@ sub cells_import(@)
     close(TEMP);
 
     foreach (@Window_Dirty)
-    {
-       $_ = $TRUE;
-    }
+    { $_ = $TRUE; }
   }
 
   unlink $TEMP_FILE;
 }
 
-sub cells_export(@)
+sub atcursor_export(@)
 # Export cells to a text file
 {
   my $curs = get_cursor($_[0]);
@@ -1158,6 +1436,29 @@ sub cells_export(@)
   unlink $TEMP_FILE;
 }
 
+#
+# Functions that operate on groups of cells in a given dimension
+# Named: cells_*
+# (bad name?)
+#
+sub cells_row($$) 
+# Find all the cells in the row starting from $cell
+# in the $dir dimension.  Return a list or a count
+# depending on calling context.
+{
+  my ($cell1, $dir) = @_;
+
+  return if (!defined $cell1);
+
+  my $cell;
+  my @result = ($cell1);
+  for ($cell = $ZZ{"$cell1$dir"}; 
+       defined($cell) && $cell != $cell1; 
+       $cell = $ZZ{"$cell$dir"}
+      )
+  { push @result, $cell; }
+  @result;
+}
 
 #
 # Functions that operate on the whole screen
@@ -1199,10 +1500,10 @@ sub display_open()
   my $Reserved = 0;		# Lines for status bar
   if ($USE_STATUSBAR)
   {
-     $Reserved = 1;
-     $Status = newwin(1, $COLS, $LINES - 1, 0);
-     bkgd($Status, $Display_Has_Colour ? COLOR_PAIR(3) : A_REVERSE);
-     $Status_Dirty = $TRUE;
+    $Reserved = 1;
+    $Status = newwin(1, $COLS, $LINES - 1, 0);
+    bkgd($Status, $Display_Has_Colour ? COLOR_PAIR(3) : A_REVERSE);
+    $Status_Dirty = $TRUE;
   }
 
   $Window[0] = newwin($LINES - $Reserved, $COLS / 2, 0, 0);
@@ -1214,18 +1515,14 @@ sub display_open()
   # We can't use foreach (@Window_Dirty) because the first time this code
   # is executed @Window_Dirty is empty and this code initialises it.
   for ($_ = 0; $_ <= $#Window; $_++)
-  {
-     $Window_Dirty[$_] = $TRUE;
-  }
+  { $Window_Dirty[$_] = $TRUE; }
 }
 
 sub display_close()
 # Free all windows and exit Curses
 {
   foreach (@Window)
-  {
-     delwin($_);
-  }
+  { delwin($_); }
   delwin($Status) if $USE_STATUSBAR;
   endwin();
 }
@@ -1281,12 +1578,15 @@ sub window_draw($$)
     box($win, 0, 0);
     addstr($win, 0, int($COLS / 4) - int(length($name) / 2) - 6,
            " $name Window ($raster) ");
-    if ($USE_STATUSBAR) {
-       addstr($win, $LINES - 2, int($COLS / 2) - length($cell) - 3, " $cell ");
-    } else {
-       addstr($Window[0], $LINES - 1, 1, " $Input_Buffer ")
-         if (defined $Input_Buffer) && ($number == 0);
-       addstr($win, $LINES - 1, int($COLS / 2) - length($cell) - 3, " $cell ");
+    if ($USE_STATUSBAR)
+    {
+      addstr($win, $LINES - 2, int($COLS / 2) - length($cell) - 3, " $cell ");
+    }
+    else
+    {
+      addstr($Window[0], $LINES - 1, 1, " $Input_Buffer ")
+        if (defined $Input_Buffer) && ($number == 0);
+      addstr($win, $LINES - 1, int($COLS / 2) - length($cell) - 3, " $cell ");
     }
   }
 
@@ -1301,8 +1601,8 @@ sub window_draw($$)
   if (!$LOTS_OF_COLOURS && is_clone($cell))
   { addch($win, $row - 1, $col, "c"); }
 
-  # Display marked-cell flag if we aren't using lots of colours
-  if (!$LOTS_OF_COLOURS && is_marked($cell))
+  # Display selected-cell flag if we aren't using lots of colours
+  if (!$LOTS_OF_COLOURS && is_active_selected($cell))
   { addch($win, $row - 1, $col, "m"); }
 
   # Display dimension guide
@@ -1332,9 +1632,7 @@ sub window_draw_Iraster($$$$$$$$)
   {
     @_ = get_contained($cell);
     do
-    {
-      $contents .= substr(get_cell_contents(shift), 0, $width * $row) . "\n";
-    }
+    { $contents .= substr(get_cell_contents(shift), 0, $width * $row) . "\n"; }
     until (($#_ < 0) || (length($contents) >= $width * $row));
     $_ = wordbreak($contents, $width);
     $contents = substr($contents, length);
@@ -1403,9 +1701,7 @@ sub window_draw_Hraster($$$$$$$$)
   {
     @_ = get_contained($cell);
     do
-    {
-      $contents .= substr(get_cell_contents(shift), 0, $width * $row) . "\n";
-    }
+    { $contents .= substr(get_cell_contents(shift), 0, $width * $row) . "\n"; }
     until (($#_ < 0) || (length($contents) >= $width * $row));
     $_ = wordbreak($contents, $width);
     $contents = substr($contents, length);
@@ -1511,9 +1807,9 @@ sub window_draw_cell($$$$)
   # Clone cells get a special colour in high-colour mode
   attron($win, COLOR_PAIR(2) | A_BOLD) 
     if $LOTS_OF_COLOURS && is_clone($cell);
-  # Ditto marked cells
+  # Ditto selected cells
   attron($win, COLOR_PAIR(3) | A_BOLD) 
-    if $LOTS_OF_COLOURS && is_marked($cell);
+    if $LOTS_OF_COLOURS && is_selected($cell);
 
   # Colour/highlight the cursors
   attron($win, $Display_Has_Colour ? COLOR_PAIR(6) : A_UNDERLINE) if $number == 1;
@@ -1539,17 +1835,11 @@ sub window_draw_cell_contents($$)
 
     # Trim and/or pad with trailing spaces as necessary
     if ($len == $width)
-    {
-       $_ = $contents;
-    }
+    { $_ = $contents; }
     elsif ($len > $width)
-    {
-       $_ = substr($contents, 0, $width);
-    }
+    { $_ = substr($contents, 0, $width); }
     else # $len < $width
-    {
-       $_ = substr($contents, 0, $len) . " " x ($width - $len);
-    }
+    { $_ = substr($contents, 0, $len) . " " x ($width - $len); }
   }
 }
 
@@ -1569,17 +1859,17 @@ sub window_draw_cell_contents_wide($$$$$)
 #
 sub status_draw($)
 {
-   my $text = shift;
+  my $text = shift;
  
-   if ($USE_STATUSBAR)
-   {
-      erase($Status);
-      attrset($Status, $Display_Has_Colour ? COLOR_PAIR(3) : A_REVERSE);
-      addstr($Status, 0, 0, $text) if $text;
-      addstr($Status, 0, $COLS - 10, $Input_Buffer) if defined($Input_Buffer);
-      display_refresh($Status);
-   }
-   $Status_Dirty = $FALSE;
+  if ($USE_STATUSBAR)
+  {
+    erase($Status);
+    attrset($Status, $Display_Has_Colour ? COLOR_PAIR(3) : A_REVERSE);
+    addstr($Status, 0, 0, $text) if $text;
+    addstr($Status, 0, $COLS - 10, $Input_Buffer) if defined($Input_Buffer);
+    display_refresh($Status);
+  }
+  $Status_Dirty = $FALSE;
 }
 
 #
@@ -1743,42 +2033,39 @@ sub catchwinch()
 sub user_error($$)
 # Handle user errors
 {
-   my ($errno, $text) = @_;
+  my ($errno, $text) = @_;
 
-   # I feel like this next should be a global.  It's not.
-   my @errors = (
-      "Key is not a valid keystroke",
-      "Cannot insert - invalid neigbours",
-      "Cannot jump to invalid or cursor cell",
-      "Error executing cell",
-      "Cannot hop - no neigbours",
-      "Cannot jump to cell that does not exist",
-      "Cannot break link - none exists",
-      "Error opening file",
-      "Cannot insert cells in the clone dimension",
-      "Cannot insert cells in the cursor dimension",
-   );
+  # I feel like this next should be a global.  It's not.
+  my @errors =
+  (
+    "Key is not a valid keystroke",
+    "Cannot insert - invalid neigbours",
+    "Cannot jump to invalid or cursor cell",
+    "Error executing cell",
+    "Cannot hop - no neigbours",
+    "Cannot jump to cell that does not exist",
+    "Cannot break link - none exists",
+    "Error opening file",
+    "Cannot insert cells in the clone dimension",
+    "Cannot insert cells in the cursor dimension",
+  );
 
-   beep(); 
-   if ($errno and $USE_STATUSBAR)
-   {
-      $errno--;
-      my $errmsg = "Error $errno: " . $errors[$errno] if $errno <= $#errors;
-      if ($text)
-      {
-         status_draw(substr("$errmsg ($text)", 0, $COLS));
-      }
-      else
-      {
-         status_draw(substr("$errmsg", 0, $COLS));
-      }
-      $StatusTimer = 20;
-   }
+  beep(); 
+  if ($errno and $USE_STATUSBAR)
+  {
+    $errno--;
+    my $errmsg = "Error $errno: " . $errors[$errno] if $errno <= $#errors;
+    if ($text)
+    { status_draw(substr("$errmsg ($text)", 0, $COLS)); }
+    else
+    { status_draw(substr("$errmsg", 0, $COLS)); }
+    $StatusTimer = 20;
+  }
 
-   if ($USE_STATUSBAR)
-   { display_refresh($Status); }
-   else
-   { display_refresh(); }
+  if ($USE_STATUSBAR)
+  { display_refresh($Status); }
+  else
+  { display_refresh(); }
 }
 
 
@@ -1801,9 +2088,8 @@ sub choose_editor()
   my $editor = $ENV{VISUAL} || $ENV{EDITOR};
   return $editor if $editor;
   my $e;
-  foreach $e (@edlist) {
-    return $e if -x $e;
-  }
+  foreach $e (@edlist)
+  { return $e if -x $e; }
   print STDERR "Sorry, ZigZag couldn't locate any usable editor.
 Please set your EDITOR variable and try again.\n";
   exit 0;
@@ -1830,16 +2116,19 @@ sub idle()
 
 # If there's a command line parameter, use it as the filename
 my $Filename = shift || $FILENAME;
-if (-e $Filename) {
-   # we have an existing datafile - back it up!
-   copy($Filename, $Filename . $BACKUP_FILE_SUFFIX);
-   $DB_Ref = tie %ZZ, 'DB_File', $Filename, O_RDWR
-     || die "Can't open data file \"$Filename\": $!\n";
-} else {
-   # no initial data file,  resort to initial geometry
-   $DB_Ref = tie %ZZ, 'DB_File', $Filename, O_RDWR | O_CREAT
-     || die "Can't create data file \"$Filename\": $!\n";
-   %ZZ = initial_geometry();
+if (-e $Filename)
+{
+  # we have an existing datafile - back it up!
+  copy($Filename, $Filename . $BACKUP_FILE_SUFFIX);
+  $DB_Ref = tie %ZZ, 'DB_File', $Filename, O_RDWR
+    || die "Can't open data file \"$Filename\": $!\n";
+}
+else
+{
+  # no initial data file,  resort to initial geometry
+  $DB_Ref = tie %ZZ, 'DB_File', $Filename, O_RDWR | O_CREAT
+    || die "Can't create data file \"$Filename\": $!\n";
+  %ZZ = initial_geometry();
 }
 
 # Set the interrupt handlers
@@ -1863,35 +2152,34 @@ eval
 
   # Partially or fully redraw dirty windows
   for ($i = 0; $i <= $#Window_Dirty; $i++)
-  {
-     window_draw($i, !defined($key_pressed)) if $Window_Dirty[$i];
-  }
+  { window_draw($i, !defined($key_pressed)) if $Window_Dirty[$i]; }
 
   if (!defined($key_pressed))
   {
-     idle();
+    idle();
   }
   elsif ($key_pressed =~ /^\d$/)
   {
-     input_process_digit($key_pressed);
+    input_process_digit($key_pressed);
   }
   elsif ($_ = $Keymap_Directions{$key_pressed})
   {
-     @_ = split //;
-     atcursor_make_link($_[0], $_[1]);
+    @_ = split //;
+    atcursor_make_link($_[0], $_[1]);
   }
   elsif ($_ = $Keymap{$key_pressed})
   {
-     if (++$Command_Count > $COMMAND_SYNC_COUNT) {
-        $DB_Ref->sync();
-        $Command_Count = 0;
-     }
-     eval;
-     die if $@;
+    if (++$Command_Count > $COMMAND_SYNC_COUNT)
+    {
+      $DB_Ref->sync();
+      $Command_Count = 0;
+    }
+    eval;
+    die if $@;
   }
   else # The key isn't a digit, a direction key or in %Keymap
   {
-     user_error(1, $key_pressed);
+    user_error(1, $key_pressed);
   }
   display_resize if $Display_Resized;
 }
@@ -1904,9 +2192,8 @@ undef $DB_Ref;  # So untie doesn't complain
 untie %ZZ;
 die if $@;
 print STDERR "Terminated by $ZigZag_Terminated signal\n" 
-   if $ZigZag_Terminated;
+  if $ZigZag_Terminated;
 
 #
 # End.
 #
-
