@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-# Xanadu(R) DIMENSIA(tm) Hyperstructure Kit, $Revision: 0.55 $
+# Xanadu(R) DIMENSIA(tm) Hyperstructure Kit, $Revision: 0.56 $
 #
 # Designed by Ted Nelson
 # Programmed by Andrew Pam ("xanni") and Bek Oberin ("gossamer")
@@ -25,11 +25,15 @@
 # ===================== Change Log
 #
 # Inital zigzag implementation
-# $Id: zigzag,v 0.55 1998/10/26 05:37:32 xanni Exp $
+# $Id: zigzag,v 0.56 1998/11/18 09:16:42 xanni Exp $
 #
 # $Log: zigzag,v $
+# Revision 0.56  1998/11/18 09:16:42  xanni
+# Change function call syntax (remove ampersands) and incorporate
+# bug fixes from Mark-Jason Dominus <mjd@plover.com>
+#
 # Revision 0.55  1998/10/26 05:37:32  xanni
-# Change default file extension and incorporate EDITOR selection patch
+# Change default file extension and incorporate $EDITOR selection patch
 # from Mark-Jason Dominus <mjd@plover.com>
 #
 # Revision 0.54  1998/10/08 03:56:21  xanni
@@ -76,13 +80,11 @@ use File::Copy qw(copy);
 # Constants are named in ALLCAPS
 # Global variables are named with Initial Caps
 # Local variables and functions are named in lowercase
-# Function calls to functions defined in this file all start with & except
-#    the Curses ones.
 # Put brackets around all function arguments.
 
 # Define constants
-#my ($VERSION) = q$Revision: 0.55 $ =~ /([\d\.]+)/;
-my $VERSION = q$Id: zigzag,v 0.55 1998/10/26 05:37:32 xanni Exp $;
+#my ($VERSION) = q$Revision: 0.56 $ =~ /([\d\.]+)/;
+my $VERSION = q$Id: zigzag,v 0.56 1998/11/18 09:16:42 xanni Exp $;
 my $FALSE = 0;
 my $TRUE = not $FALSE;
 my $CELLS_PER_WIN = 5;           # Number of cells displayed across each window
@@ -149,19 +151,19 @@ my %Keymap = (  # Keyboard mappings
    chr(127)           => 'atcursor_delete(1);',
    &KEY_DC            => 'atcursor_delete(1);',
    &KEY_BACKSPACE     => 'input_process_backspace();',
-   &meta_key("s")     => 'atcursor_hop(0, "L");',
-   &meta_key("f")     => 'atcursor_hop(0, "R");',
-   &meta_key("e")     => 'atcursor_hop(0, "U");',
-   &meta_key("c")     => 'atcursor_hop(0, "D");',
-   &meta_key("D")     => 'atcursor_edit(0);',
-   &meta_key("d")     => 'atcursor_edit(0);',
+   meta_key("s")      => 'atcursor_hop(0, "L");',
+   meta_key("f")      => 'atcursor_hop(0, "R");',
+   meta_key("e")      => 'atcursor_hop(0, "U");',
+   meta_key("c")      => 'atcursor_hop(0, "D");',
+   meta_key("D")      => 'atcursor_edit(0);',
+   meta_key("d")      => 'atcursor_edit(0);',
    "\cD"              => 'atcursor_edit(0);',
-   &meta_key("j")     => 'atcursor_hop(1, "L");',
-   &meta_key("l")     => 'atcursor_hop(1, "R");',
-   &meta_key("i")     => 'atcursor_hop(1, "U");',
-   &meta_key(",")     => 'atcursor_hop(1, "D");',
-   &meta_key("K")     => 'atcursor_edit(1);',
-   &meta_key("k")     => 'atcursor_edit(1);',
+   meta_key("j")      => 'atcursor_hop(1, "L");',
+   meta_key("l")      => 'atcursor_hop(1, "R");',
+   meta_key("i")      => 'atcursor_hop(1, "U");',
+   meta_key(",")      => 'atcursor_hop(1, "D");',
+   meta_key("K")      => 'atcursor_edit(1);',
+   meta_key("k")      => 'atcursor_edit(1);',
    "\cK"              => 'atcursor_edit(1);',
    "b"                => '@_ = input_get_direction(); atcursor_break_link(@_) if $_[0];',
    "G"                => 'cursor_jump(get_cursor(0));',
@@ -177,27 +179,27 @@ my %Keymap = (  # Keyboard mappings
    "q"                => 'view_quadrant_toggle(1);',
    "R"		      => 'view_reset(0);',
    "r"		      => 'view_reset(1);',
-   "\cR"	      => 'display_refresh(&curscr); $@ = "";',
+   "\cR"	      => 'display_refresh(curscr()); $@ = "";',
    "T"                => 'atcursor_clone(0);',
    "t"                => 'atcursor_clone(1);',
    "V"                => 'view_raster_toggle(0);',
    "v"                => 'view_raster_toggle(1);',
-   "\cV"	      => 'status_draw(&version()); $StatusTimer = 20;',
-   &meta_key("V")     => 'status_draw(&version()); $StatusTimer = 20;',
-   &meta_key("v")     => 'status_draw(&version()); $StatusTimer = 20;',
+   "\cV"	      => 'status_draw(version()); $StatusTimer = 20;',
+   meta_key("V")      => 'status_draw(version()); $StatusTimer = 20;',
+   meta_key("v")      => 'status_draw(version()); $StatusTimer = 20;',
    "X"                => 'view_rotate(0, "X");',
    "x"                => 'view_rotate(1, "X");',
    "\cX"	      => '$ZigZag_Terminated = "^X";',
-   &meta_key("X")     => 'view_flip(0, "X");',
-   &meta_key("x")     => 'view_flip(1, "X");',
+   meta_key("X")      => 'view_flip(0, "X");',
+   meta_key("x")      => 'view_flip(1, "X");',
    "Y"                => 'view_rotate(0, "Y");',
    "y"                => 'view_rotate(1, "Y");',
-   &meta_key("Y")     => 'view_flip(0, "Y");',
-   &meta_key("y")     => 'view_flip(1, "Y");',
+   meta_key("Y")      => 'view_flip(0, "Y");',
+   meta_key("y")      => 'view_flip(1, "Y");',
    "Z"                => 'view_rotate(0, "Z");',
    "z"                => 'view_rotate(1, "Z");',
-   &meta_key("Z")     => 'view_flip(0, "Z");',
-   &meta_key("z")     => 'view_flip(1, "Z");',
+   meta_key("Z")      => 'view_flip(0, "Z");',
+   meta_key("z")      => 'view_flip(1, "Z");',
 );
 
 sub initial_geometry()
@@ -440,7 +442,7 @@ sub is_marked($)
 sub dimension_is_essential($)
 {
   my $dim = shift;
-  return ($dim =~ m/.?d\.(cursor|clone|1|2|3|inside|contents|mark)/);
+  return ($dim =~ m/^[+-]?d\.(cursor|clone|1|2|3|inside|contents|mark)$/);
 }
 
 sub dimension_exists($)
@@ -484,7 +486,7 @@ sub get_cell_contents($)
 {
   my $cell = $_[0];
   die "No cell $cell" unless defined($ZZ{"$cell"});
-  my $contents = $ZZ{&get_lastcell($cell, "-d.clone")};
+  my $contents = $ZZ{get_lastcell($cell, "-d.clone")};
 
   if ($ZZMAIL_SUPPORT && $contents =~ /^\[(\d+)\+(\d+)\]/)
   # Note 1: This should handle pointer lists, but currently only handles
@@ -494,7 +496,7 @@ sub get_cell_contents($)
   {
     my $pos = $1;
     my $len = $2;
-    my $PRIMEDIA = $ZZ{&get_outline_parent($cell)};
+    my $PRIMEDIA = $ZZ{get_outline_parent($cell)};
     if (open(PRIMEDIA, "<$PRIMEDIA"))
     {
       my $error = $FALSE;
@@ -571,7 +573,7 @@ sub get_contained($)
   my $gen = 0;
   my ($index, $next, $start);
 
-  $start = &get_lastcell($cell, "-d.contents");
+  $start = get_lastcell($cell, "-d.contents");
   # If d.contents is not linked or is a loop, just use $cell
   $start = $cell if !defined($start) || defined($ZZ{"$start-d.contents"});
 
@@ -594,7 +596,7 @@ sub get_contained($)
     {
       push @stack, $cell, $start;
 
-      $start = &get_lastcell($next, "-d.contents");
+      $start = get_lastcell($next, "-d.contents");
       # If d.contents is not linked or is a loop, just use $next
       $start = $next if !defined($start) || defined($ZZ{"$start-d.contents"});
 
@@ -640,7 +642,7 @@ sub link_break($$$)
   die "Invalid direction $dim" unless ($dim =~ /^[+-]/);
 
   delete($ZZ{"$cell1$dim"});
-  delete($ZZ{$cell2 . &reverse_sign($dim)});
+  delete($ZZ{$cell2 . reverse_sign($dim)});
 }
 
 sub link_make($$$)
@@ -651,7 +653,7 @@ sub link_make($$$)
   die "No cell $cell1" unless defined($ZZ{"$cell1"});
   die "No cell $cell2" unless defined($ZZ{"$cell2"});
   die "Invalid direction $dim" unless ($dim =~ /^[+-]/);
-  my $back = &reverse_sign($dim);
+  my $back = reverse_sign($dim);
   die "$cell1 already linked" if defined($ZZ{"$cell1$dim"});
   die "$cell2 already linked" if defined($ZZ{"$cell2$back"});
 
@@ -668,12 +670,12 @@ sub cell_create($)
 # Create a new cell and optionally edit it
 {
   my $edit = $_[0];
-  my ($curs, $dir) = &input_get_direction();
+  my ($curs, $dir) = input_get_direction();
   if ($curs)
   {
-    &atcursor_insert($curs, $dir);
-    &cursor_move_direction($curs, $dir);
-    &atcursor_edit($curs) if $edit;
+    atcursor_insert($curs, $dir);
+    cursor_move_direction($curs, $dir);
+    atcursor_edit($curs) if $edit;
   }
 }
 
@@ -692,19 +694,19 @@ sub cell_insert($$$)
   my $cell3 = $ZZ{"$cell2$dim"};
 
   # Can't insert if $cell1 has inappropriate neighbours
-  if (defined($ZZ{$cell1 . &reverse_sign($dim)}) ||
+  if (defined($ZZ{$cell1 . reverse_sign($dim)}) ||
       ((defined($ZZ{"$cell1$dim"}) && defined($cell3))))
   { 
-     &user_error(2, "$cell1 $dim $cell2"); 
+     user_error(2, "$cell1 $dim $cell2"); 
   }
   else
   {
     if (defined($cell3))
     {
-       &link_break($cell2, $cell3, $dim);
-       &link_make($cell1, $cell3, $dim);
+       link_break($cell2, $cell3, $dim);
+       link_make($cell1, $cell3, $dim);
     }
-    &link_make($cell2, $cell1, $dim);
+    link_make($cell2, $cell1, $dim);
   }
 }
 
@@ -716,9 +718,9 @@ sub cell_excise($$)
   my $prev = $ZZ{"$cell-$dim"};
   my $next = $ZZ{"$cell+$dim"};
 
-  &link_break($cell, $prev, "-$dim") if defined($prev);
-  &link_break($cell, $next, "+$dim") if defined($next);
-  &link_make($prev, $next, "+$dim") if defined($prev) && defined($next);
+  link_break($cell, $prev, "-$dim") if defined($prev);
+  link_break($cell, $next, "+$dim") if defined($next);
+  link_make($prev, $next, "+$dim") if defined($prev) && defined($next);
 }
 
 #
@@ -744,16 +746,16 @@ sub cursor_move_dimension($$)
 {
   my ($curs, $dim) = @_;
   die "Invalid direction $dim" unless ($dim =~ /^[+-]/);
-  my $cell = &get_lastcell($curs, "-d.cursor");
+  my $cell = get_lastcell($curs, "-d.cursor");
 
   # Don't bother if there's nowhere to go
   return if (!defined($_ = $ZZ{"$cell$dim"}) ||
              ($_ == $cell) || defined $ZZ{"$_-d.cursor"});
 
   # Now move the cursor
-  $cell = &get_lastcell($_, "+d.cursor");
-  &cell_excise($curs, "d.cursor");
-  &cell_insert($curs, $cell, "+d.cursor");
+  $cell = get_lastcell($_, "+d.cursor");
+  cell_excise($curs, "d.cursor");
+  cell_insert($curs, $cell, "+d.cursor");
 
   foreach (@Window_Dirty)
   {
@@ -770,13 +772,13 @@ sub cursor_jump($)
   # Must jump to a valid non-cursor cell
   if (!defined $ZZ{$Input_Buffer} || defined $ZZ{"$Input_Buffer-d.cursor"})
   {
-     &user_error(3, $Input_Buffer);
+     user_error(3, $Input_Buffer);
   }
   else
   {
     # Move the cursor
-    &cell_excise($curs, "d.cursor");
-    &cell_insert($curs, &get_lastcell($Input_Buffer, "+d.cursor"), "+d.cursor");
+    cell_excise($curs, "d.cursor");
+    cell_insert($curs, get_lastcell($Input_Buffer, "+d.cursor"), "+d.cursor");
 
     foreach (@Window_Dirty)
     {
@@ -790,9 +792,9 @@ sub cursor_jump($)
 sub cursor_move_direction($$)
 # Move given cursor in a given direction
 {
-  my $curs = &get_cursor($_[0]);
+  my $curs = get_cursor($_[0]);
 
-  &cursor_move_dimension($curs, &get_dimension($curs, $_[1]));
+  cursor_move_dimension($curs, get_dimension($curs, $_[1]));
 }
 
 #
@@ -803,10 +805,10 @@ sub atcursor_execute($)
 # Execute the contents of a progcell under a given cursor
 {
   my $cell;
-  foreach $cell (&get_contained(&get_lastcell(&get_cursor($_[0]), "-d.cursor")))
+  foreach $cell (get_contained(get_lastcell(get_cursor($_[0]), "-d.cursor")))
   {
-#    $_ = $ZZ{&get_lastcell($cell, "-d.clone")};
-    $_ = &get_cell_contents($cell);
+#    $_ = $ZZ{get_lastcell($cell, "-d.clone")};
+    $_ = get_cell_contents($cell);
     $@ = "Cell does not start with #";	# Error in case eval isn't done
     if (/^#/) {
       $DB_Ref->sync();
@@ -817,7 +819,7 @@ sub atcursor_execute($)
   }
   chomp $@;
   if ($@) {
-     &user_error(4, $@);
+     user_error(4, $@);
      return 0;
   }
 
@@ -827,13 +829,13 @@ sub atcursor_execute($)
 sub atcursor_clone($)
 # Create a new clone cell at a given cursor
 {
-  my $curs = &get_cursor($_[0]);
-  my $cell = &get_lastcell($curs, "-d.cursor");
+  my $curs = get_cursor($_[0]);
+  my $cell = get_lastcell($curs, "-d.cursor");
 
   my $new = $ZZ{"n"}++;
   $ZZ{$new} = "Clone of $cell";
-  &cell_insert($new, $cell, "+d.clone");
-  &cursor_move_dimension($curs, "+d.clone");
+  cell_insert($new, $cell, "+d.clone");
+  cursor_move_dimension($curs, "+d.clone");
 
   foreach (@Window_Dirty)
   {
@@ -844,14 +846,14 @@ sub atcursor_clone($)
 sub atcursor_mark($)
 # mark the current cell
 {
-  my $curs = &get_cursor($_[0]);
-  my $cell = &get_lastcell($curs, "-d.cursor");
+  my $curs = get_cursor($_[0]);
+  my $cell = get_lastcell($curs, "-d.cursor");
 
   my $new = $ZZ{"n"}++;
   $ZZ{$new} = "mark";
-  &cell_insert($new, $cell, "+d.mark");
-  &status_draw("Marked cell $cell");
-  #&cursor_move_dimension($curs, "+d.mark");
+  cell_insert($new, $cell, "+d.mark");
+  status_draw("Marked cell $cell");
+  #cursor_move_dimension($curs, "+d.mark");
 
 
   foreach (@Window_Dirty)
@@ -863,26 +865,26 @@ sub atcursor_mark($)
 sub atcursor_insert($$)
 # Insert a new cell at a given cursor in a given direction
 {
-  my $curs = &get_cursor($_[0]);
-  my $dim = &get_dimension($curs, $_[1]);
+  my $curs = get_cursor($_[0]);
+  my $dim = get_dimension($curs, $_[1]);
 
   # Can't insert if it's the clone dimension
   if ($dim =~ /^[+-]d\.clone$/)
   {
-     &user_error(9);
+     user_error(9);
      return 0;
   }
 
   # Can't insert if it's the cursor dimension
   if ($dim =~ /^[+-]d\.cursor$/)
   {
-     &user_error(10);
+     user_error(10);
      return 0;
   }
 
   my $new = $ZZ{"n"}++;
   $ZZ{$new} = "$new";                # Initial contents will be cell number
-  &cell_insert($new, &get_lastcell($curs, "-d.cursor"), $dim);
+  cell_insert($new, get_lastcell($curs, "-d.cursor"), $dim);
 
   foreach (@Window_Dirty)
   {
@@ -893,8 +895,8 @@ sub atcursor_insert($$)
 sub atcursor_delete($)
 # Delete the cell under a given cursor
 {
-  my $curs = &get_cursor($_[0]);
-  my $cell = &get_lastcell($curs, "-d.cursor");
+  my $curs = get_cursor($_[0]);
+  my $cell = get_lastcell($curs, "-d.cursor");
   my $index = $ZZ{"$CURSOR_HOME+d.1"}; # Dimension list is +d.1 from Cursor home
   my $done = $FALSE;
   my $dim;
@@ -920,7 +922,7 @@ sub atcursor_delete($)
            defined $ZZ{"$_-d.cursor"}));
 
     # Excise $cell from dimension $dim
-    &cell_excise($cell, $dim);
+    cell_excise($cell, $dim);
   }
   continue
   {
@@ -932,11 +934,11 @@ sub atcursor_delete($)
   $neighbour = 0 unless defined $neighbour;
 
   # Move $cell to the deleted stack
-  &cell_insert($cell, $DELETE_HOME, "+d.2");
+  cell_insert($cell, $DELETE_HOME, "+d.2");
 
   # Move the cursor to any $neighbour or home if none
-  $cell = &get_lastcell($neighbour, "+d.cursor");
-  &cell_insert($curs, $cell, "+d.cursor");
+  $cell = get_lastcell($neighbour, "+d.cursor");
+  cell_insert($curs, $cell, "+d.cursor");
 
   foreach (@Window_Dirty)
   {
@@ -951,35 +953,35 @@ sub atcursor_hop(@)
 #           --------------                           -------------
 # $prev---$cell---$neighbour---$next        $prev---$neighbour---$cell---$next
 {
-  my $curs = &get_cursor($_[0]);
-  my $dim = &get_dimension($curs, $_[1]);
+  my $curs = get_cursor($_[0]);
+  my $dim = get_dimension($curs, $_[1]);
 
   # Not in the Cursor dimension!
   return if $dim eq "d.cursor";
 
-  my $cell = &get_lastcell($curs, "-d.cursor");
+  my $cell = get_lastcell($curs, "-d.cursor");
   my $neighbour = $ZZ{"$cell$dim"};
   if (!defined $neighbour)
   { 
-     &user_error(5, "$cell$dim"); 
+     user_error(5, "$cell$dim"); 
   }
   else
   {
-    my $prev = $ZZ{$cell . &reverse_sign($dim)};
+    my $prev = $ZZ{$cell . reverse_sign($dim)};
     my $next = $ZZ{"$neighbour$dim"};
 
-    &link_break($cell, $neighbour, $dim);
+    link_break($cell, $neighbour, $dim);
     if (defined $prev)
     {
-      &link_break($prev, $cell, $dim);
-      &link_make($prev, $neighbour, $dim);
+      link_break($prev, $cell, $dim);
+      link_make($prev, $neighbour, $dim);
     }
     if (defined $next)
     {
-      &link_break($neighbour, $next, $dim);
-      &link_make($cell, $next, $dim);
+      link_break($neighbour, $next, $dim);
+      link_make($cell, $next, $dim);
     }
-    &link_make($neighbour, $cell, $dim);
+    link_make($neighbour, $cell, $dim);
     
     foreach (@Window_Dirty)
     {
@@ -991,7 +993,7 @@ sub atcursor_hop(@)
 sub atcursor_edit($)
 # Invoke an external text editor to edit the cell under a given cursor
 {
-  my $cell = &get_lastcell(&get_lastcell(&get_cursor($_[0]), "-d.cursor"), "-d.clone");
+  my $cell = get_lastcell(get_lastcell(get_cursor($_[0]), "-d.cursor"), "-d.clone");
 
   # Save $cell contents in a temporary file
   open(TEMP, ">$TEMP_FILE") || die "Can't open \"$TEMP_FILE\": $!\n";
@@ -999,7 +1001,7 @@ sub atcursor_edit($)
   close(TEMP);
 
   # Invoke the editor on the temporary file
-  &display_close();
+  display_close();
   if (!system("$EDITOR $TEMP_FILE"))
   {
     undef $/;                # Read entire file into cell
@@ -1010,15 +1012,15 @@ sub atcursor_edit($)
     chomp;
     $ZZ{$cell} = $_;
   }
-  &display_open();
+  display_open();
   unlink $TEMP_FILE;
 }
 
 sub atcursor_make_link($$)
 # Link two cells along a given dimension
 {
-  my $curs = &get_cursor($_[0]);
-  my $dim = &get_dimension($curs, $_[1]);
+  my $curs = get_cursor($_[0]);
+  my $dim = get_dimension($curs, $_[1]);
 
   # Not in the Cursor dimension!
   return if $dim eq "d.cursor";
@@ -1026,15 +1028,15 @@ sub atcursor_make_link($$)
   # If no cell number selected, just move the cursor instead
   if (!defined $Input_Buffer)
   {
-     &cursor_move_dimension($curs, $dim);
+     cursor_move_dimension($curs, $dim);
   }
   elsif (!defined $ZZ{$Input_Buffer})
   {
-     &user_error(6, $Input_Buffer);
+     user_error(6, $Input_Buffer);
   }
   else
   {
-    &cell_insert($Input_Buffer, &get_lastcell($curs, "-d.cursor"), $dim);
+    cell_insert($Input_Buffer, get_lastcell($curs, "-d.cursor"), $dim);
     undef $Input_Buffer;
 
     foreach (@Window_Dirty)
@@ -1047,9 +1049,9 @@ sub atcursor_make_link($$)
 sub atcursor_break_link(@)
 # Break a link in a given dimension
 {
-  my $curs = &get_cursor($_[0]);
-  my $dim = &get_dimension($curs, $_[1]);
-  my $cell = &get_lastcell($curs, "-d.cursor");
+  my $curs = get_cursor($_[0]);
+  my $dim = get_dimension($curs, $_[1]);
+  my $cell = get_lastcell($curs, "-d.cursor");
 
   # Not in the Cursor dimension!
   return if $dim eq "d.cursor";
@@ -1057,11 +1059,11 @@ sub atcursor_break_link(@)
   # First check that there is an existing link
   if (!defined($_ = $ZZ{"$cell$dim"}))
   {
-     &user_error(7, "$cell$dim");
+     user_error(7, "$cell$dim");
   }
   else
   {
-    &link_break($cell, $_, $dim);
+    link_break($cell, $_, $dim);
 
     foreach (@Window_Dirty)
     {
@@ -1078,17 +1080,17 @@ sub atcursor_break_link(@)
 sub cells_import(@)
 # Import cells from a text file
 {
-  my $curs = &get_cursor($_[0]);
-  my $cell = &get_lastcell($curs, "-d.cursor");
-  my $dim = &get_dimension($curs, $_[1]);
+  my $curs = get_cursor($_[0]);
+  my $cell = get_lastcell($curs, "-d.cursor");
+  my $dim = get_dimension($curs, $_[1]);
 
   # Not in the Cursor dimension!
   return if $dim eq "d.cursor";
 
   # Invoke the editor on the temporary file
-  &display_close();
+  display_close();
   system("$EDITOR $TEMP_FILE");
-  &display_open();
+  display_open();
 
   $/ = "";                                # Blank lines are separators
   if (open(TEMP, "<$TEMP_FILE"))
@@ -1101,7 +1103,7 @@ sub cells_import(@)
         my $new = $ZZ{"n"}++;
         s/\n\|/\n/g;                        # Strip off protective bars
         $ZZ{$new} = $_;
-        &cell_insert($new, $cell, $dim);
+        cell_insert($new, $cell, $dim);
         $cell = $new;
       }
     }
@@ -1119,9 +1121,9 @@ sub cells_import(@)
 sub cells_export(@)
 # Export cells to a text file
 {
-  my $curs = &get_cursor($_[0]);
-  my $dim = &get_dimension($curs, $_[1]);
-  my $start = &get_lastcell($curs, "-d.cursor");
+  my $curs = get_cursor($_[0]);
+  my $dim = get_dimension($curs, $_[1]);
+  my $start = get_lastcell($curs, "-d.cursor");
   my $index = $start;
   my $loop = $FALSE;
 
@@ -1133,11 +1135,11 @@ sub cells_export(@)
     {
       my $cell;
 
-      foreach $cell (&get_contained($index))
+      foreach $cell (get_contained($index))
       {
         print TEMP "\n|" unless $cell eq $index; # Separate contained cells
-        $_ = $ZZ{&get_lastcell($cell, "-d.clone")};
-#	$_ = &get_cell_contents($cell);
+        $_ = $ZZ{get_lastcell($cell, "-d.clone")};
+#	$_ = get_cell_contents($cell);
         chomp;
         s/\n/\n\|/g;     # Protect blank lines in cells
         print TEMP;
@@ -1150,9 +1152,9 @@ sub cells_export(@)
   close(TEMP);
 
   # Invoke the editor on the temporary file
-  &display_close();
+  display_close();
   system("$EDITOR $TEMP_FILE");
-  &display_open();
+  display_open();
   unlink $TEMP_FILE;
 }
 
@@ -1191,8 +1193,8 @@ sub display_open()
     init_pair(9, COLOR_BLACK, COLOR_BLUE);
   }
   
-  &display_clear();		# Clear screen
-  &display_refresh();
+  display_clear();		# Clear screen
+  display_refresh();
 
   my $Reserved = 0;		# Lines for status bar
   if ($USE_STATUSBAR)
@@ -1236,12 +1238,12 @@ sub display_resize()
 #        out code below is the proper way to do it, but unfortunately modifying
 #        $LINES and $COLS doesn't seem to get passed back to curses by the Perl
 #        Curses interface.  :-(
-  &display_close();
+  display_close();
 #  my $getwinsz = &TIOCGWINSZ || die "No TIOCGWINSZ";
 #  my $winsz = "ss";
 #  ioctl(STDIN, $getwinsz, $winsz) || die "TIOCGWINSZ failed";
 #  ($LINES, $COLS) = unpack("ss", $winsz);
-  &display_open();
+  display_open();
   $Display_Resized = $FALSE;
 }
 
@@ -1257,9 +1259,9 @@ sub window_draw($$)
   my ($number, $full) = @_;
   # Local variables
   my $win = $Window[$number];
-  my $curs = &get_cursor($number);
+  my $curs = get_cursor($number);
   my $name = $ZZ{$curs};
-  my $cell = &get_lastcell($curs, "-d.cursor");
+  my $cell = get_lastcell($curs, "-d.cursor");
   $curs = $ZZ{"$curs+d.1"};
   my $right = $ZZ{$curs};
   $curs = $ZZ{"$curs+d.1"};
@@ -1290,17 +1292,17 @@ sub window_draw($$)
 
   # Display window contents.
   if ($raster =~ /^H/)
-  { &window_draw_Hraster($number, $cell, $row, $col, $right, $down, $quad, $full); }
+  { window_draw_Hraster($number, $cell, $row, $col, $right, $down, $quad, $full); }
   else
-  { &window_draw_Iraster($number, $cell, $row, $col, $right, $down, $quad, $full); }
+  { window_draw_Iraster($number, $cell, $row, $col, $right, $down, $quad, $full); }
 
   attrset($win, A_BOLD);
   # Display clone flag if we aren't using lots of colours
-  if (!$LOTS_OF_COLOURS && &is_clone($cell))
+  if (!$LOTS_OF_COLOURS && is_clone($cell))
   { addch($win, $row - 1, $col, "c"); }
 
   # Display marked-cell flag if we aren't using lots of colours
-  if (!$LOTS_OF_COLOURS && &is_marked($cell))
+  if (!$LOTS_OF_COLOURS && is_marked($cell))
   { addch($win, $row - 1, $col, "m"); }
 
   # Display dimension guide
@@ -1312,7 +1314,7 @@ sub window_draw($$)
   attrset($win, A_BOLD);
 
   $Window_Dirty[$number] = $FALSE if $full;
-  &display_refresh($win);
+  display_refresh($win);
 }
 
 sub window_draw_Iraster($$$$$$$$)
@@ -1320,31 +1322,31 @@ sub window_draw_Iraster($$$$$$$$)
 {
   my ($number, $cell, $row, $col, $right, $down, $quad, $full) = @_;
   my $win = $Window[$number];
-  my $left = &reverse_sign($right);
-  my $up = &reverse_sign($down);
+  my $left = reverse_sign($right);
+  my $up = reverse_sign($down);
   my ($y, $i, $j);
   my $contents = "";
   my $width = ($COLS / 2 - 1) - $col;
 
   if ($quad)
   {
-    @_ = &get_contained($cell);
+    @_ = get_contained($cell);
     do
     {
-      $contents .= substr(&get_cell_contents(shift), 0, $width * $row) . "\n";
+      $contents .= substr(get_cell_contents(shift), 0, $width * $row) . "\n";
     }
     until (($#_ < 0) || (length($contents) >= $width * $row));
-    $_ = &wordbreak($contents, $width);
+    $_ = wordbreak($contents, $width);
     $contents = substr($contents, length);
-    &window_draw_cell_contents_wide($win, $_, $row, $col, $width);
+    window_draw_cell_contents_wide($win, $_, $row, $col, $width);
   }
   else
   {
-    &window_draw_cell($win, $cell, $row, $col);
-    &window_draw_cells_horizontal($win, $cell, $row, $col, $right, 1);
+    window_draw_cell($win, $cell, $row, $col);
+    window_draw_cells_horizontal($win, $cell, $row, $col, $right, 1);
   }
 
-  &window_draw_cells_horizontal($win, $cell, $row, $col, $left, -1);
+  window_draw_cells_horizontal($win, $cell, $row, $col, $left, -1);
   return unless $full;
 
   # Draw up to half a screen each above and below if necessary
@@ -1356,9 +1358,9 @@ sub window_draw_Iraster($$$$$$$$)
     if (defined $i && defined ($i = $ZZ{"$i$up"}))
     {
       addch($win, $row - $y * 2 + 1, $col + int($Cursor_Len / 2), ACS_VLINE);
-      &window_draw_cell($win, $i, $row - $y * 2, $col);
-      &window_draw_cells_horizontal($win, $i, $row - $y * 2, $col, $left, -1);
-      &window_draw_cells_horizontal($win, $i, $row - $y * 2, $col, $right, 1);
+      window_draw_cell($win, $i, $row - $y * 2, $col);
+      window_draw_cells_horizontal($win, $i, $row - $y * 2, $col, $left, -1);
+      window_draw_cells_horizontal($win, $i, $row - $y * 2, $col, $right, 1);
     }
 
     # Find the next cell below, if any
@@ -1367,10 +1369,10 @@ sub window_draw_Iraster($$$$$$$$)
       if (!$quad)
       {
         addch($win, $row + $y * 2 - 1, $col + int($Cursor_Len / 2), ACS_VLINE);
-        &window_draw_cell($win, $j, $row + $y * 2, $col);
-        &window_draw_cells_horizontal($win, $j, $row + $y * 2, $col, $right, 1);
+        window_draw_cell($win, $j, $row + $y * 2, $col);
+        window_draw_cells_horizontal($win, $j, $row + $y * 2, $col, $right, 1);
       }
-      &window_draw_cells_horizontal($win, $j, $row + $y * 2, $col, $left, -1);
+      window_draw_cells_horizontal($win, $j, $row + $y * 2, $col, $left, -1);
     }
   }
 
@@ -1379,9 +1381,9 @@ sub window_draw_Iraster($$$$$$$$)
     # Draw the remainder of the cell contents
     for ($y = 1; $y < $row; $y++)
     {
-      $_ = &wordbreak($contents, $width);
+      $_ = wordbreak($contents, $width);
       $contents = substr($contents, length);
-      &window_draw_cell_contents_wide($win, $_, $row + $y, $col, $width);
+      window_draw_cell_contents_wide($win, $_, $row + $y, $col, $width);
     }
   }
 }
@@ -1391,31 +1393,31 @@ sub window_draw_Hraster($$$$$$$$)
 {
   my ($number, $cell, $row, $col, $right, $down, $quad, $full) = @_;
   my $win = $Window[$number];
-  my $left = &reverse_sign($right);
-  my $up = &reverse_sign($down);
+  my $left = reverse_sign($right);
+  my $up = reverse_sign($down);
   my ($x, $i, $j);
   my $contents = "";
   my $width = ($COLS / 2 - 1) - $col;
 
   if ($quad)
   {
-    @_ = &get_contained($cell);
+    @_ = get_contained($cell);
     do
     {
-      $contents .= substr(&get_cell_contents(shift), 0, $width * $row) . "\n";
+      $contents .= substr(get_cell_contents(shift), 0, $width * $row) . "\n";
     }
     until (($#_ < 0) || (length($contents) >= $width * $row));
-    $_ = &wordbreak($contents, $width);
+    $_ = wordbreak($contents, $width);
     $contents = substr($contents, length);
-    &window_draw_cell_contents_wide($win, $_, $row, $col, $width);
+    window_draw_cell_contents_wide($win, $_, $row, $col, $width);
   }
   else
   {
-    &window_draw_cell($win, $cell, $row, $col);
-    &window_draw_cells_vertical($win, $cell, $row, $col, $down, 1);
+    window_draw_cell($win, $cell, $row, $col);
+    window_draw_cells_vertical($win, $cell, $row, $col, $down, 1);
   }
 
-  &window_draw_cells_vertical($win, $cell, $row, $col, $up, -1);
+  window_draw_cells_vertical($win, $cell, $row, $col, $up, -1);
   return unless $full;
 
   # Draw up to half a screen each left and right if necessary
@@ -1426,9 +1428,9 @@ sub window_draw_Hraster($$$$$$$$)
     if (defined $i && defined ($i = $ZZ{"$i$left"}))
     {
       addch($win, $row, $col - ($x - 1) * $Cursor_Len - 1, ACS_HLINE);
-      &window_draw_cell($win, $i, $row, $col - $x * $Cursor_Len);
-      &window_draw_cells_vertical($win, $i, $row, $col - $x * $Cursor_Len, $up, -1);
-      &window_draw_cells_vertical($win, $i, $row, $col - $x * $Cursor_Len, $down, 1);
+      window_draw_cell($win, $i, $row, $col - $x * $Cursor_Len);
+      window_draw_cells_vertical($win, $i, $row, $col - $x * $Cursor_Len, $up, -1);
+      window_draw_cells_vertical($win, $i, $row, $col - $x * $Cursor_Len, $down, 1);
     }
 
     # Find the next cell to the right, if any
@@ -1437,10 +1439,10 @@ sub window_draw_Hraster($$$$$$$$)
       if (!$quad)
       {
         addch($win, $row, $col + $x * $Cursor_Len - 1, ACS_HLINE);
-        &window_draw_cell($win, $j, $row, $col + $x * $Cursor_Len);
-        &window_draw_cells_vertical($win, $j, $row, $col + $x * $Cursor_Len, $down, 1);
+        window_draw_cell($win, $j, $row, $col + $x * $Cursor_Len);
+        window_draw_cells_vertical($win, $j, $row, $col + $x * $Cursor_Len, $down, 1);
       }
-      &window_draw_cells_vertical($win, $j, $row, $col + $x * $Cursor_Len, $up, -1);
+      window_draw_cells_vertical($win, $j, $row, $col + $x * $Cursor_Len, $up, -1);
     }
   }
 
@@ -1449,9 +1451,9 @@ sub window_draw_Hraster($$$$$$$$)
     # Draw the remainder of the cell contents
     for ($j = 1; $j < $row; $j++)
     {
-      $_ = &wordbreak($contents, $width);
+      $_ = wordbreak($contents, $width);
       $contents = substr($contents, length);
-      &window_draw_cell_contents_wide($win, $_, $row + $j, $col, $width);
+      window_draw_cell_contents_wide($win, $_, $row + $j, $col, $width);
     }
   }
 }
@@ -1471,7 +1473,7 @@ sub window_draw_cells_horizontal($$$$$$)
     if (defined ($cell = $ZZ{"$cell$dim"}))
     {
       addch($win, $row, $col + $ofs, ACS_HLINE);
-      &window_draw_cell($win, $cell, $row, $col += $inc);
+      window_draw_cell($win, $cell, $row, $col += $inc);
     }
   }
 }
@@ -1489,7 +1491,7 @@ sub window_draw_cells_vertical($$$$$$)
     if (defined ($cell = $ZZ{"$cell$dim"}))
     {
       addch($win, $row += $sign, $col + int($Cursor_Len / 2), ACS_VLINE);
-      &window_draw_cell($win, $cell, $row += $sign, $col);
+      window_draw_cell($win, $cell, $row += $sign, $col);
     }
   }
 }
@@ -1504,20 +1506,20 @@ sub window_draw_cell($$$$)
 
   while (defined $cursor)
   { $cursor = $ZZ{"$cursor-d.2"};  $number++; }
-  ($content) = split(/\n/, &get_cell_contents($cell));	# Just the first line
+  ($content) = split(/\n/, get_cell_contents($cell));	# Just the first line
 
   # Clone cells get a special colour in high-colour mode
   attron($win, COLOR_PAIR(2) | A_BOLD) 
-    if $LOTS_OF_COLOURS && &is_clone($cell);
+    if $LOTS_OF_COLOURS && is_clone($cell);
   # Ditto marked cells
   attron($win, COLOR_PAIR(3) | A_BOLD) 
-    if $LOTS_OF_COLOURS && &is_marked($cell);
+    if $LOTS_OF_COLOURS && is_marked($cell);
 
   # Colour/highlight the cursors
   attron($win, $Display_Has_Colour ? COLOR_PAIR(6) : A_UNDERLINE) if $number == 1;
   attron($win, $Display_Has_Colour ? COLOR_PAIR(7) : A_REVERSE) if $number > 1;
   addnstr($win, $row, $col,
-          &window_draw_cell_contents($content, $Cursor_Len - 1), $Cursor_Len - 1);
+          window_draw_cell_contents($content, $Cursor_Len - 1), $Cursor_Len - 1);
   # End colour/highlight
   attrset($win, A_NORMAL);
 }
@@ -1557,7 +1559,7 @@ sub window_draw_cell_contents_wide($$$$$)
   my ($win, $contents, $row, $col, $width) = @_;
 
   attrset($win, A_REVERSE);
-  addnstr($win, $row, $col, &window_draw_cell_contents($contents, $width), $width);
+  addnstr($win, $row, $col, window_draw_cell_contents($contents, $width), $width);
   attrset($win, A_NORMAL);
 }
 
@@ -1575,7 +1577,7 @@ sub status_draw($)
       attrset($Status, $Display_Has_Colour ? COLOR_PAIR(3) : A_REVERSE);
       addstr($Status, 0, 0, $text) if $text;
       addstr($Status, 0, $COLS - 10, $Input_Buffer) if defined($Input_Buffer);
-      &display_refresh($Status);
+      display_refresh($Status);
    }
    $Status_Dirty = $FALSE;
 }
@@ -1588,7 +1590,7 @@ sub status_draw($)
 sub view_quadrant_toggle($)
 # Toggle quadrant display style for given window
 {
-  my $cell = &get_cursor($_[0]);
+  my $cell = get_cursor($_[0]);
   $cell = $ZZ{"$cell+d.1"};
   $cell = $ZZ{"$cell+d.1"};
   $cell = $ZZ{"$cell+d.1"};
@@ -1606,7 +1608,7 @@ sub view_quadrant_toggle($)
 sub view_raster_toggle($)
 # Toggle redraw style for given window
 {
-  my $cell = &get_cursor($_[0]);
+  my $cell = get_cursor($_[0]);
   $cell = $ZZ{"$cell+d.1"};
   $cell = $ZZ{"$cell+d.1"};
   $cell = $ZZ{"$cell+d.1"};
@@ -1623,7 +1625,7 @@ sub view_reset($)
 # Reset dimensions of given cursor
 {
   my ($number) = @_;
-  my $curs = &get_cursor($number);
+  my $curs = get_cursor($number);
   my $index = $ZZ{"$CURSOR_HOME+d.1"}; # Dimension list is +d.1 from Cursor home
 
   $ZZ{$curs = $ZZ{"$curs+d.1"}} = "+$ZZ{$index}";
@@ -1637,7 +1639,7 @@ sub view_rotate($$)
 # Rotate dimensions of given cursor around given axis
 {
   my ($number, $axis) = @_;
-  my $curs = &get_cursor($number);
+  my $curs = get_cursor($number);
   die "Invalid axis $axis" unless $axis =~ /^[XYZ]$/;
   $curs = $ZZ{"$curs+d.1"};
   $curs = $ZZ{"$curs+d.1"} if $axis ne "X";
@@ -1661,12 +1663,12 @@ sub view_flip($$)
 # Invert sign of given cursor and dimension
 {
   my ($number, $axis) = @_;
-  my $curs = &get_cursor($number);
+  my $curs = get_cursor($number);
   $curs = $ZZ{"$curs+d.1"};
   $curs = $ZZ{"$curs+d.1"} if $axis ne "X";
   $curs = $ZZ{"$curs+d.1"} if $axis eq "Z";
 
-  $ZZ{$curs} = &reverse_sign($ZZ{$curs});
+  $ZZ{$curs} = reverse_sign($ZZ{$curs});
   $Window_Dirty[$number] = $TRUE;
 }
 
@@ -1685,14 +1687,14 @@ sub input_get_direction()
 # Attempt to get a direction key
 {
   my $key;
-  while (!defined($key = &input_get_any())) {}  # Idle until we get a key
+  while (!defined($key = input_get_any())) {}  # Idle until we get a key
 
   if ($_ = $Keymap_Directions{$key})
   { @_ = split //; }
   else
   {
     # The key isn't a direction key
-    &user_error(1, $key);
+    user_error(1, $key);
     undef @_;
   }
 }
@@ -1707,7 +1709,7 @@ sub input_process_digit($)
   elsif ($Input_Buffer < 1000000000)
   { $Input_Buffer = $Input_Buffer * 10 + $_[0];  $Status_Dirty = $TRUE; }
   else
-  { &user_error(0, ""); }
+  { user_error(0, ""); }
 }
 
 sub input_process_backspace()
@@ -1723,7 +1725,7 @@ sub input_process_backspace()
     $Status_Dirty = $TRUE;
   }
   else
-  { &user_error(0, ""); }
+  { user_error(0, ""); }
 }
 
 #
@@ -1764,19 +1766,19 @@ sub user_error($$)
       my $errmsg = "Error $errno: " . $errors[$errno] if $errno <= $#errors;
       if ($text)
       {
-         &status_draw(substr("$errmsg ($text)", 0, $COLS));
+         status_draw(substr("$errmsg ($text)", 0, $COLS));
       }
       else
       {
-         &status_draw(substr("$errmsg", 0, $COLS));
+         status_draw(substr("$errmsg", 0, $COLS));
       }
       $StatusTimer = 20;
    }
 
    if ($USE_STATUSBAR)
-   { &display_refresh($Status); }
+   { display_refresh($Status); }
    else
-   { &display_refresh(); }
+   { display_refresh(); }
 }
 
 
@@ -1817,7 +1819,7 @@ sub idle()
   {
     $StatusTimer--;
     if (!$StatusTimer)
-    { &status_draw(NULL); }
+    { status_draw(NULL); }
   }
 }
 
@@ -1837,24 +1839,24 @@ if (-e $Filename) {
    # no initial data file,  resort to initial geometry
    $DB_Ref = tie %ZZ, 'DB_File', $Filename, O_RDWR | O_CREAT
      || die "Can't create data file \"$Filename\": $!\n";
-   %ZZ = &initial_geometry();
+   %ZZ = initial_geometry();
 }
 
 # Set the interrupt handlers
 $SIG{INT} = $SIG{TERM} = \&catchsig;
 $SIG{WINCH} = \&catchwinch;
 
-&display_open();
+display_open();
 eval
 {
-  my $key_pressed = &input_get_any();
+  my $key_pressed = input_get_any();
   my $i;
 
   # Redraw the status line if dirty
   if ($Status_Dirty)
   {
     if ($USE_STATUSBAR)
-    { &status_draw(NULL); }
+    { status_draw(NULL); }
     else
     { $Window_Dirty[0] = $TRUE; $Status_Dirty = $FALSE; }
   }
@@ -1862,21 +1864,21 @@ eval
   # Partially or fully redraw dirty windows
   for ($i = 0; $i <= $#Window_Dirty; $i++)
   {
-     &window_draw($i, !defined($key_pressed)) if $Window_Dirty[$i];
+     window_draw($i, !defined($key_pressed)) if $Window_Dirty[$i];
   }
 
   if (!defined($key_pressed))
   {
-     &idle();
+     idle();
   }
   elsif ($key_pressed =~ /^\d$/)
   {
-     &input_process_digit($key_pressed);
+     input_process_digit($key_pressed);
   }
   elsif ($_ = $Keymap_Directions{$key_pressed})
   {
      @_ = split //;
-     &atcursor_make_link($_[0], $_[1]);
+     atcursor_make_link($_[0], $_[1]);
   }
   elsif ($_ = $Keymap{$key_pressed})
   {
@@ -1889,15 +1891,15 @@ eval
   }
   else # The key isn't a digit, a direction key or in %Keymap
   {
-     &user_error(1, $key_pressed);
+     user_error(1, $key_pressed);
   }
-  &display_resize if $Display_Resized;
+  display_resize if $Display_Resized;
 }
 until ($@ || $ZigZag_Terminated);
 
-&display_clear();
-&display_refresh();
-&display_close();
+display_clear();
+display_refresh();
+display_close();
 undef $DB_Ref;  # So untie doesn't complain
 untie %ZZ;
 die if $@;
