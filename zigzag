@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-# Xanadu(R) Zigzag(tm) Hyperstructure Kit curses interface, $Revision: 0.68 $
+# Xanadu(R) Zigzag(tm) Hyperstructure Kit curses interface, $Revision: 0.70 $
 #
 # Designed by Ted Nelson
 # Programmed by Andrew Pam ("xanni") and Bek Oberin ("gossamer")
@@ -25,9 +25,15 @@
 # ===================== Change Log
 #
 # Inital zigzag implementation
-# $Id: zigzag,v 0.68 1999/03/13 13:06:35 xanni Exp $
+# $Id: zigzag,v 0.70 1999/05/14 13:45:51 xanni Exp $
 #
 # $Log: zigzag,v $
+# Revision 0.70  1999/05/14 13:45:51  xanni
+# * Fixed missing "defined" bug in "<", ">", "b" and "h" keymappings
+# * Replaced direct access to %ZZ with cell_get(), cell_set() and cell_nbr()
+# * Changed db_open() and db_close() to slice_open() and slice_close_all()
+# * Simplified input_process_digit() and input_process_backspace()
+#
 # Revision 0.68  1999/03/13 13:06:35  xanni
 # Added two new user_error() messages for invalid deletion attempts
 #
@@ -83,8 +89,8 @@ use Zigzag;
 # Use the $TRUE and $FALSE constants instead of "1" and "0"
 
 # Define constants
-#my ($VERSION) = q$Revision: 0.68 $ =~ /([\d\.]+)/;
-my $VERSION = q$Id: zigzag,v 0.68 1999/03/13 13:06:35 xanni Exp $;
+#my ($VERSION) = q$Revision: 0.70 $ =~ /([\d\.]+)/;
+my $VERSION = q$Id: zigzag,v 0.70 1999/05/14 13:45:51 xanni Exp $;
 my $FALSE = 0;
 my $TRUE = !$FALSE;
 my $CELLS_PER_WIN = 5;           # Number of cells displayed across each window
@@ -147,8 +153,8 @@ my %Keymap =
   ( # Keyboard mappings
     "\r"		=> 'atcursor_execute(0);',
     "\n"		=> 'atcursor_execute(0);',
-    "<"			=> '@_ = input_get_direction(); atcursor_import(@_) if $_[0];',
-    ">"			=> '@_ = input_get_direction(); atcursor_export(@_) if $_[0];',
+    "<"			=> '@_ = input_get_direction(); atcursor_import(@_) if defined $_[0];',
+    ">"			=> '@_ = input_get_direction(); atcursor_export(@_) if defined $_[0];',
     chr(127)		=> 'atcursor_delete(1);',
     &KEY_DC		=> 'atcursor_delete(1);',
     &KEY_BACKSPACE	=> 'input_process_backspace();',
@@ -166,11 +172,11 @@ my %Keymap =
     meta_key("K")	=> 'atcursor_edit(1);',
     meta_key("k")	=> 'atcursor_edit(1);',
     "\cK"		=> 'atcursor_edit(1);',
-    "b"			=> '@_ = input_get_direction(); atcursor_break_link(@_) if $_[0];',
+    "b"			=> '@_ = input_get_direction(); atcursor_break_link(@_) if defined $_[0];',
     "G"			=> 'cursor_jump_input(get_cursor(0));',
     "g"			=> 'cursor_jump_input(get_cursor(1));',
     &KEY_HOME		=> 'cursor_jump_input(get_cursor(1));',
-    "h"			=> '@_ = input_get_direction(); atcursor_hop(@_) if $_[0];',
+    "h"			=> '@_ = input_get_direction(); atcursor_hop(@_) if defined $_[0];',
     "\cL"		=> 'display_refresh(curscr()); $@ = "";',
     "M"			=> 'atcursor_select(0);',
     "m"			=> 'atcursor_select(1);',
@@ -254,7 +260,7 @@ sub atcursor_edit($)
 
   # Save $cell contents in a temporary file
   open(TEMP, ">$TEMP_FILE") || die "Can't open \"$TEMP_FILE\": $!\n";
-  print TEMP $ZZ{$cell}, "\n";
+  print TEMP cell_get($cell), "\n";
   close(TEMP);
 
   # Invoke the editor on the temporary file
@@ -267,7 +273,7 @@ sub atcursor_edit($)
     close(TEMP);
     $/="";                # Remove trailing blank lines
     chomp;
-    $ZZ{$cell} = $_;
+    cell_set($cell, $_);
   }
   display_open();
   unlink $TEMP_FILE;
@@ -323,14 +329,14 @@ sub atcursor_export(@)
 
   while (defined $index && !$loop)
   {
-    if (!defined $ZZ{"$index-d.cursor"})        # Don't export cursor cells
+    if (!defined cell_nbr($index, "-d.cursor")) # Don't export cursor cells
     {
       my $cell;
 
       foreach $cell (get_contained($index))
       {
         print TEMP "\n|" unless $cell eq $index; # Separate contained cells
-        $_ = $ZZ{get_lastcell($cell, "-d.clone")};
+        $_ = cell_get(get_lastcell($cell, "-d.clone"));
 #	$_ = get_cell_contents($cell);
         chomp;
         s/\n/\n\|/g;     # Protect blank lines in cells
@@ -338,7 +344,7 @@ sub atcursor_export(@)
       }
       print TEMP "\n\n";
     }
-    $index = $ZZ{"$index$dim"};
+    $index = cell_nbr($index, $dim);
     $loop = $index eq $start;
   }
   close(TEMP);
@@ -497,12 +503,13 @@ sub display_draw_cell($$$$)
 # Draw cell at row and column
 {
   my ($win, $cell, $row, $col) = @_;
-  my $cursor = $ZZ{"$cell+d.cursor"} unless defined $ZZ{"$cell-d.cursor"};
+  my $cursor = cell_nbr($cell, "+d.cursor")
+    unless defined cell_nbr($cell, "-d.cursor");
   my $number = -1;
   my $content;
 
   while (defined $cursor)
-  { $cursor = $ZZ{"$cursor-d.2"};  $number++; }
+  { $cursor = cell_nbr($cursor, "-d.2");  $number++; }
   ($content) = split(/\n/, get_cell_contents($cell));	# Just the first line
 
   # Clone cells get a special colour in high-colour mode
@@ -613,15 +620,15 @@ sub display_draw_window($$)
   # Local variables
   my $win = $Window[$number];
   my $curs = get_cursor($number);
-  my $name = $ZZ{$curs};
+  my $name = cell_get($curs);
   my $cell = get_lastcell($curs, "-d.cursor");
-  $curs = $ZZ{"$curs+d.1"};
-  my $right = $ZZ{$curs};
-  $curs = $ZZ{"$curs+d.1"};
-  my $down = $ZZ{$curs};
-  $curs = $ZZ{"$curs+d.1"};
-  my $out = $ZZ{$curs};
-  my $raster = $ZZ{$ZZ{"$curs+d.1"}};
+  $curs = cell_nbr($curs, "+d.1");
+  my $right = cell_get($curs);
+  $curs = cell_nbr($curs, "+d.1");
+  my $down = cell_get($curs);
+  $curs = cell_nbr($curs, "+d.1");
+  my $out = cell_get($curs);
+  my $raster = cell_get(cell_nbr($curs, "+d.1"));
   my $quad = ($raster =~ /Q$/);
 
   # Draw window border, title and current cell number
@@ -707,11 +714,11 @@ sub input_process_digit($)
 # Process numeric input from keyboard
 {
   # If this is the first digit
-  if (!defined $Input_Buffer)
+  if (not defined $Input_Buffer)
   { $Input_Buffer = $_[0];  $Status_Dirty = $TRUE; }
   # Otherwise add another digit if the number isn't too large
-  elsif ($Input_Buffer < 1000000000)
-  { $Input_Buffer = $Input_Buffer * 10 + $_[0];  $Status_Dirty = $TRUE; }
+  elsif (length($Input_Buffer) < 9)
+  { $Input_Buffer .= $_[0];  $Status_Dirty = $TRUE; }
   else
   { user_error(0, ""); }
 }
@@ -721,11 +728,9 @@ sub input_process_backspace()
 {
   if (defined $Input_Buffer)
   {
-    # Remove the least significant digit if there's more than one digit
-    if ($Input_Buffer > 9)
-    { $Input_Buffer /= 10; }
-    else # Otherwise remove the only digit
-    { undef $Input_Buffer; }
+    # Remove the last character, if any
+    chop $Input_Buffer;
+    undef $Input_Buffer if $Input_Buffer eq "";
     $Status_Dirty = $TRUE;
   }
   else
@@ -829,7 +834,7 @@ sub idle()
 # Begin main.
 #
 
-db_open(shift);
+slice_open(shift);
 
 # Set the interrupt handlers
 $SIG{INT} = $SIG{TERM} = \&catchsig;
@@ -871,7 +876,7 @@ eval
     {
       if (++$Command_Count > $COMMAND_SYNC_COUNT)
       {
-        db_sync();
+        slice_sync_all();
         $Command_Count = 0;
       }
       eval;
@@ -889,7 +894,7 @@ until ($@ || $Zigzag_Terminated);
 display_clear();
 display_refresh();
 display_close();
-db_close();
+slice_close_all();
 die if $@;
 print STDERR "Terminated by $Zigzag_Terminated signal\n" 
   if $Zigzag_Terminated;
