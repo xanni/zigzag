@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-# Xanadu(R) ZigZag(tm) Hyperstructure Kit curses interface, $Revision: 0.65 $
+# Xanadu(R) ZigZag(tm) Hyperstructure Kit curses interface, $Revision: 0.66 $
 #
 # Designed by Ted Nelson
 # Programmed by Andrew Pam ("xanni") and Bek Oberin ("gossamer")
@@ -25,9 +25,12 @@
 # ===================== Change Log
 #
 # Inital zigzag implementation
-# $Id: zigzag,v 0.65 1999/01/07 04:03:04 xanni Exp $
+# $Id: zigzag,v 0.66 1999/01/07 07:17:26 xanni Exp $
 #
 # $Log: zigzag,v $
+# Revision 0.66  1999/01/07 07:17:26  xanni
+# Implemented display_draw_layout() to replace window_draw_* functions
+#
 # Revision 0.65  1999/01/07 04:03:04  xanni
 # Derived from the monolithic zigzag 0.64
 #
@@ -74,8 +77,8 @@ use ZigZag;
 # Use the $TRUE and $FALSE constants instead of "1" and "0"
 
 # Define constants
-#my ($VERSION) = q$Revision: 0.65 $ =~ /([\d\.]+)/;
-my $VERSION = q$Id: zigzag,v 0.65 1999/01/07 04:03:04 xanni Exp $;
+#my ($VERSION) = q$Revision: 0.66 $ =~ /([\d\.]+)/;
+my $VERSION = q$Id: zigzag,v 0.66 1999/01/07 07:17:26 xanni Exp $;
 my $FALSE = 0;
 my $TRUE = !$FALSE;
 my $CELLS_PER_WIN = 5;           # Number of cells displayed across each window
@@ -553,6 +556,38 @@ sub display_draw_link_vertical($$$)
         $Window_Xcentre + $x * $Cell_Width + int($Cell_Width / 2), ACS_VLINE);
 }
 
+sub display_draw_layout($$$$)
+# Draw given display window from a layout
+{
+  my ($win, $lref, $quad, $preview) = @_;
+  my ($x, $y);
+
+  for ($y = -int($Vcells / 2); $y <= int($Vcells / 2); $y++)
+  {
+    if (!$preview || ($y == 0))
+    {
+      for ($x = -int($Hcells / 2); $x <= int($Hcells / 2); $x++)
+      {
+        if ($quad && ($x == 0) && ($y == 0))
+        { display_draw_quad($win, $$lref{"0,0"}, $preview); }
+        elsif (!$quad || ($x < 0) || ($y < 0))
+        {
+          my $cell = $$lref{"$x,$y"};
+          display_draw_cell($win, $cell, $y, $x) if defined $cell;
+          display_draw_link_horizontal($win, $y, $x) if defined $$lref{"$x-$y"};
+          display_draw_link_vertical($win, $y, $x) if defined $$lref{"$x|$y"};
+        }
+      }
+    }
+    elsif (!$quad || $y < 0)
+    {
+      my $cell = $$lref{"0,$y"};
+      display_draw_cell($win, $cell, $y, 0) if defined $cell;
+      display_draw_link_vertical($win, $y, 0) if defined $$lref{"0|$y"};
+    }
+  }
+}
+
 sub display_draw_window($$)
 # Redraw given display window
 {
@@ -589,12 +624,14 @@ sub display_draw_window($$)
   }
 
   # Display window contents.
+  my %layout;
   if ($preview)
-  { window_draw_preview($Window[$number], $cell, $right, $down, $quad); }
+  { layout_preview(\%layout, $cell, $right, $down); }
   elsif ($raster =~ /^H/)
-  { window_draw_Hraster($Window[$number], $cell, $right, $down, $quad); }
+  { layout_Hraster(\%layout, $cell, $right, $down); }
   else
-  { window_draw_Iraster($Window[$number], $cell, $right, $down, $quad); }
+  { layout_Iraster(\%layout, $cell, $right, $down); }
+  display_draw_layout($Window[$number], \%layout, $quad, $preview);
 
   attrset($win, A_BOLD);
   # Display clone flag if we aren't using lots of colours
@@ -709,7 +746,7 @@ sub user_error($$)
   );
 
   beep(); 
-  if ($errno and $USE_STATUSBAR)
+  if ($errno && $USE_STATUSBAR)
   {
     $errno--;
     my $errmsg = "Error $errno";
@@ -772,7 +809,7 @@ sub idle()
 # Begin main.
 #
 
-db_open();
+db_open(shift);
 
 # Set the interrupt handlers
 $SIG{INT} = $SIG{TERM} = \&catchsig;
