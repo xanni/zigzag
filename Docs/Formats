@@ -1,0 +1,13 @@
+
+Assuming the dataset is in hash %CELLS.
+
+For cell number X, cell contents are stored in
+   $CELLS{"X"}
+
+For a link between cells X and Y, over dimension D in the posward
+direction, we have
+   $CELLS{"X+D"} = Y  -plus-
+   $CELLS{"Y+D"} = X
+
+
+

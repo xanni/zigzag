@@ -1,0 +1,11 @@
+Simple HTTP zigzag interface:
+
+GET /{window#}
+
+Returns the window as an HTML table
+
+GET /{window#}/{action}
+
+Performs an action and returns the resulting window as an HTML table
+Actions can be either a cell number to execute or a keystroke
+Keystrokes are the character code in hexadecimal, prefixed with "0x".

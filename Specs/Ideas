@@ -1,0 +1,100 @@
+These ones are the same for each platform:
+   ZigZag
+      Container that holds all cells
+      Knows how to traverse dimensions, etc
+   
+   ZigZag::Cell
+      Cells are objects
+      $cell->get_link($dimension, $direction);
+      KNows how to find its own contents and links
+
+   ZigZag::View::Cursor
+      Each view corresponds to one cursor and one UI
+      Knows how to work out what data to pass to display
+      Abstraction of display
+
+      ZigZag::View::Cursor::Action
+      ZigZag::View::Cursor::Data
+         Looks the same but receive different events
+         Each Action view knows which data view it's attached to at any
+         given moment (one of the events is You-Have-Data-View-X)
+
+      ZigZag::View::Status
+         Highly important ones are errors
+         Does little of its own processing, most cases
+         You say, "View::Error sends message to D::E saying "Error Text Y, Importance
+            Z" and 2 different ones depending on if it's modal or not."
+         You say, "ones ==>> display functionss"
+
+
+These ones are different for each platform:
+   ZigZag::Display::Cursor
+      Each one holds a view
+      Calls view to figure out what to draw on the screen
+      Effectively, a user window.
+      Knows when it is and isn't visible
+
+      thorfy says, "Views know all about data they wanna display."
+      thorfy says, "Display must talk to Screen when is created, to find out where
+         it is to scribble on"
+      thorfy says, "(Presumably there's curses lib stuff to create a "sub window""
+      thorfy says, ")"
+      thorfy says, "an Display can be told that it owns that area"
+      thorfy says, "but can also be told that is *not* being displayed"
+      thorfy says, "so when View tells Display "hey, something here changed" Display
+         go "I not care, I not being displayed""
+
+
+   ZigZag::Display::Status
+      Same analogy.
+      It writes stuff to the screen.
+
+   ZigZag::Input
+      Only one for the whole system
+      Holds a list of all displays, but works directly on the views
+         ($action_display->view->attach_to_data($data_display->view);)
+      Also takes keystrokes/mouse (ie: events) and transates into which
+         action and passes back to the appropriate action views
+      Tells action views which data views they're attached to
+
+   ZigZag::Screen
+      Just one
+      Does screen init, etc.
+      Tells Displays when they're visible
+      Sorta application-object
+
+thorfy says, "Observer Pattern goes like this:"
+thorfy says, "Observer registers interest in state change with Observee"
+thorfy says, "when Observee state change, sends message (function call,
+   whatever) to Observer"
+thorfy says, "Observer then does whatever with that"
+thorfy says, "View is Observer of Cells"
+You say, "So Screen tells displays when they're visibble?"
+thorfy says, "Display is Observer of View"
+thorfy says, "Screen tells Displays when and where they're visible, yes"
+thorfy says, "so Display can decide when notified of change in View, that it
+   does nothing, or it draws something"
+goss nodnods.
+thorfy says, "typical trace of messages through system will go:"
+thorfy says, "Input module sends event to Action Display, which sends event to
+   View, which causes something to happen to Cell.  Cell (or maybe ZigZag)
+   knows that it has changed, and should notify Views that are interested"
+thorfy says, "of State Change, then View can recalc and send message to
+   Display"
+thorfy says, "which then scribbles on its little subwindow"
+thorfy says, ""Screen" module is "Application" which is managing all this
+   stuff"
+thorfy says, "Pro'ly should be named CursorView and CursorDisplay"
+thorfy says, "Pro'ly should be named CursorView and CursorDisplay"
+thorfy says, "then can have parallel "ErrorView" and ErrorDisplay"
+thorfy says, "StatusView/Display etc"
+
+
+
+
+thorfy says, "okai... difficult bit is going to be deciding how to talk
+   Cells->ZigZag->View::Cursor"
+thorfy says, "okai :) But make note of difficult bit."
+thorfy says, "Is medium danger sign floating over that bit"
+thorfy says, "rest is pretty simple"
+

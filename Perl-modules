@@ -1,0 +1,36 @@
+Perl modules required for zigzag and zizl
+-----------------------------------------
+
+zigzag requires Curses
+zizl requires libwww-perl
+libwww-perl requires MD5, MIME-Base64, HTML-Parser and libnet
+libnet requires Data-Dumper
+
+To use zigzag you will need to obtain and install the Curses
+Perl module from http://www.cpan.org/modules/by-module/Curses
+
+To use zizl you will need to obtain and install the following
+Perl modules from http://www.cpan.org/modules/by-module/
+
+Data-Dumper
+HTML-Parser
+MD5
+MIME-Base64
+libnet
+libwww-perl
+
+Note that if you are using Red Hat Linux, the MD5 module is also available
+as an RPM called "perl-MD5".  If you have already installed this you do
+not need to download and install it again now.
+
+For each module (in the order above) extract the tar file and change to
+the directory containing the extracted files, then:
+
+perl Makefile.pl
+make
+make test
+make install
+
+This is also documented in the README file for each module.
+Once you have successfully tested and installed all the required
+modules, you may safely delete all the extracted files and directories.

@@ -1,0 +1,50 @@
+#Scan email
+# Attempts to open a primedia file named by the contents of the cell under
+# cursor 1, scan it for one or more emails delimited by linefeed, "From", space
+# and create a rank of cells along +d.2 connected +d.1 from the starting cell,
+# each containing an OSMIC pointer to an email.
+#
+# Doesn't yet interface to Unnai-san's OSMIC server.
+#
+# The current implementation will only run once - later implementations
+# should reuse the cells when doing a rescan.
+#
+# Written 1998/02/21 by Andrew Pam <xanni@xanadu.net>
+# Last updated 1998/04/11 by Andrew Pam
+# Concept by Ted Nelson
+# Copyright (c) 1998 Project Xanadu
+
+my $cell = &get_lastcell(&get_cursor(1), "-d.cursor");
+my $PRIMEDIA = $ZZ{$cell};
+my $dir = "+d.1";
+$/ = "\nFrom ";		# Email delimiter
+if (not open(PRIMEDIA, "<$PRIMEDIA"))
+{ &user_error(7, $PRIMEDIA); }
+else
+{
+  my $cur = tell(PRIMEDIA);
+  my $new;
+  my $pos;
+  while (<PRIMEDIA>)
+  {
+    if (defined $pos)
+    {
+      $new = $ZZ{"n"}++;
+      $ZZ{$new} = "[$pos+" . ($cur - $pos) . "]";
+      &cell_insert($new, $cell, $dir);
+      $cell = $new;
+      $dir = "+d.2";
+    }
+    $pos = $cur;
+    $cur = tell(PRIMEDIA) - 5;	# Subtract length of "From "
+  }
+  if (defined $pos)
+  {
+    $new = $ZZ{"n"}++;
+    $ZZ{$new} = "[$pos+" . (tell(PRIMEDIA) - $pos) . "]";
+    &cell_insert($new, $cell, $dir);
+  }
+  close PRIMEDIA;
+  $Window_Dirty[1] = $TRUE;
+}
+undef $/;

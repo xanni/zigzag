@@ -1,0 +1,98 @@
+#!/usr/bin/perl -w
+#
+# Try to fix Zigzag data files
+#
+# Programmed 28 Mar 1999 by Andrew Pam ("Xanni")
+# Copyright (c) 1999 Project Xanadu
+#
+# For more information, visit http://www.xanadu.net/zz/
+#
+
+use integer;
+use strict;
+use DB_File;
+use File::Copy;
+
+# Note: We are using the following naming convention:
+# Constants are named in ALLCAPS
+# Global variables are named with Initial Caps
+# Local variables and functions are named in lowercase
+# Function calls to functions defined in this file all start with & except
+#    the Curses ones.
+# Put brackets around all function arguments.
+
+# Define constants
+my $FALSE = 0;
+my $TRUE = !$FALSE;
+my $CURSOR_HOME = 10;            # NOTE!  This assumes it stays fixed!
+my $DELETE_HOME = 99;            # NOTE!  This assumes it stays fixed!
+my $FILENAME = "zigzag.zz";      # Default filename for initial slice
+my $BACKUP_FILE_SUFFIX = ".bak";
+
+#
+# Main
+#
+
+my %ZZ;
+# If there's a parameter, use it as the filename
+my $Filename = shift || $FILENAME;
+die "\"$Filename\" doesn't exist\n" unless -e $Filename;
+# we have an existing datafile - back it up!
+move($Filename, $Filename . $BACKUP_FILE_SUFFIX)
+  or die "Can't rename data file \"$Filename\": $!\n";
+copy($Filename . $BACKUP_FILE_SUFFIX, $Filename)
+  or die "Can't copy data file \"$Filename\": $!\n";
+my $DB_Ref = tie %ZZ, 'DB_File', $Filename, O_RDWR
+  or die "Can't open data file \"$Filename\": $!\n";
+
+# Build hash of cells in the Recycle Pile
+my %recycled;
+my $cell = $ZZ{"$DELETE_HOME+d.2"};
+while (defined $cell and ($cell != $DELETE_HOME))
+{
+  $recycled{$cell} = $TRUE;
+  $cell = $ZZ{"$cell+d.2"};
+}
+
+# Fix unrequited links and remove links from cells in the Recycle Pile
+my $problem;
+do
+{
+  $problem = $FALSE;
+  while (my ($key, $value) = each %ZZ)
+  {
+    next unless $key =~ /^(\d+)(\+|-)(.+)$/;
+    $cell = $1;
+    my $dir = $2;
+    my $dim = $3;
+    my $opposite = ($dir eq "+") ? "-" : "+";
+    if ($recycled{$cell} and ($dim ne "d.2") and ($dim ne "d.cursor"))
+    {
+      $problem = $TRUE;
+      delete $ZZ{$key};
+      delete $ZZ{"$value$opposite$dim"};
+      print STDERR "Removed invalid link $cell$dir$dim -> $value " .
+		   "from recycled cell\n";
+    }
+    elsif (not defined $ZZ{"$value$opposite$dim"})
+    {
+      $problem = $TRUE;
+      $ZZ{"$value$opposite$dim"} = $cell;
+      print STDERR "Created matching link $value$opposite$dim -> $cell for " .
+		   "unrequited link $cell$dir$dim -> $value\n";
+    }
+    elsif ($ZZ{"$value$opposite$dim"} ne $cell)
+    {
+      $problem = $TRUE;
+      my $old = $ZZ{"$value$opposite$dim"};
+      delete $ZZ{"$old$dir$dim"};
+      $ZZ{"$value$opposite$dim"} = $cell;
+      print STDERR "Fixed link $value$opposite$dim -> $old conflicting with " .
+ 		   "$cell$dir$dim -> $value\n";
+    }
+  }
+} until not $problem;
+
+# Close data files
+undef $DB_Ref;	# So untie doesn't complain
+untie %ZZ;

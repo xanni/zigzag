@@ -1,0 +1,80 @@
+Initial ZigZag key bindings
+---------------------------
+Enter			Execute cell at cursor 0
+Del			Delete cell at cursor 1
+0-9			Enter digit into numeric buffer
+BS			Backspace digit in numeric buffer
+
+<			Import rank from text editor in specified direction
+>			Export rank in specified direction to text editor
+
+s, S			Move cursor 0 negwards in X dimension
+f, F			Move cursor 0 poswards in X dimension
+e, E			Move cursor 0 negwards in Y dimension
+c, C			Move cursor 0 poswards in Y dimension
+d			Move cursor 0 negwards in Z dimension
+D			Move cursor 0 poswards in Z dimension
+
+j, J, Left		Make link or move cursor 1 negwards in X dimension
+l, L, Right		Make link or move cursor 1 poswards in X dimension
+i, I, Up		Make link or move cursor 1 negwards in Y dimension
+",", Down		Make link or move cursor 1 poswards in Y dimension
+k, PgUp			Make link or move cursor 1 negwards in Z dimension
+K, PgDn			Make link or move cursor 1 poswards in Z dimension
+
+G			Move cursor 0 to cell number
+g, Home			Move cursor 1 to cell number
+
+Alt-s			Hop cell at cursor 0 negwards in X dimension
+Alt-f			Hop cell at cursor 0 poswards in X dimension
+Alt-e			Hop cell at cursor 0 negwards in Y dimension
+Alt-c			Hop cell at cursor 0 poswards in Y dimension
+Alt-j			Hop cell at cursor 1 negwards in X dimension
+Alt-l			Hop cell at cursor 1 poswards in X dimension
+Alt-i			Hop cell at cursor 1 negwards in Y dimension
+Alt-","			Hop cell at cursor 1 poswards in Y dimension
+
+Control-D, Alt-d/D	Edit cell at cursor 0
+Control-K, Alt-k/K	Edit cell at cursor 1
+
+b			Break link in specified direction
+h			Hop cell in specified direction
+
+Control-L		Redraw all windows
+
+m			Mark/unmark cell at cursor 0
+M			Mark/unmark cell at cursor 1
+Alt-m			Rotate selection groups
+Alt-M			Save selection group and start a new one
+
+n			New cell in specified direction and edit
+N, Ins			New cell in specified direction
+
+Q			Toggle cursor 0 cell view
+q			Toggle cursor 1 cell view
+
+R			Reset dimensions for cursor 0
+r			Reset dimensions for cursor 1
+
+T			Create clone of cell at cursor 0
+t			Create clone of cell at cursor 1
+
+V			Toggle cursor 0 refresh raster
+v			Toggle cursor 1 refresh raster
+
+Control-V, Alt-v/V	Display Zigzag version
+Control-X		Exit Zigzag
+
+X			Rotate cursor 0 X axis dimension
+x			Rotate cursor 1 X axis dimension
+Y			Rotate cursor 0 Y axis dimension
+y			Rotate cursor 1 Y axis dimension
+Z			Rotate cursor 0 Z axis dimension
+z			Rotate cursor 1 Z axis dimension
+
+Alt-X			Flip cursor 0 X axis dimension
+Alt-x			Flip cursor 1 X axis dimension
+Alt-Y			Flip cursor 0 Y axis dimension
+Alt-y			Flip cursor 1 Y axis dimension
+Alt-Z			Flip cursor 0 Z axis dimension
+Alt-z			Flip cursor 1 Z axis dimension

@@ -1,0 +1,2 @@
+* A selection head can be selected, but is_selected and is_active_selected
+  don't count it; unselecting it crashes Zigzag.

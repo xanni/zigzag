@@ -1,0 +1,20 @@
+#ZZshell - concatenates the contents of all cells +d.1 and
+# sends the result to the unix shell, then puts the output +d.2.
+
+# Accumulate the contents of the cells +d.1 into $command
+my $command = "";
+my $i = $ZZ{"$cell+d.1"};
+while ($i)
+{
+  $command .= "$ZZ{$i} ";
+  $i = $ZZ{"$i+d.1"};
+}
+
+# Now create a new cell in $new and store the results of executing $command
+my $new = $ZZ{"n"}++;
+$ZZ{$new} = `$command`;
+
+# Connect $new +d.2 from the current $cell and force display refresh
+&cell_insert($new, $cell, "+d.2");
+foreach (@Window_Dirty)
+{ $_ = $TRUE; }
