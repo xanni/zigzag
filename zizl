@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-# Xanadu(R) Zigzag(tm) Hyperstructure Kit HTML interface, $Revision: 0.4 $
+# Xanadu(R) Zigzag(tm) Hyperstructure Kit HTML interface, $Revision: 0.5 $
 #
 # Designed by Ted Nelson
 # Programmed by Andrew Pam ("xanni") and Bek Oberin ("gossamer")
@@ -25,9 +25,12 @@
 # ===================== Change Log
 #
 # Inital zigzag implementation
-# $Id: zizl,v 0.4 1999/01/27 14:08:12 xanni Exp $
+# $Id: zizl,v 0.5 1999/01/27 18:36:36 xanni Exp $
 #
 # $Log: zizl,v $
+# Revision 0.5  1999/01/27 18:36:36  xanni
+# Implemented start page, browser communication, clean server shutdown
+#
 # Revision 0.4  1999/01/27 14:08:12  xanni
 # Implemented simple web server
 #
@@ -59,11 +62,12 @@ use Zigzag;
 # Use the $TRUE and $FALSE constants instead of "1" and "0"
 
 # Define constants
-#my ($VERSION) = q$Revision: 0.4 $ =~ /([\d\.]+)/;
-my $VERSION = q$Id: zizl,v 0.4 1999/01/27 14:08:12 xanni Exp $;
+#my ($VERSION) = q$Revision: 0.5 $ =~ /([\d\.]+)/;
+my $VERSION = q$Id: zizl,v 0.5 1999/01/27 18:36:36 xanni Exp $;
 my $FALSE = 0;
 my $TRUE = !$FALSE;
 my $BGCOLOR = "#FFFFFF";	# White background
+my $BROWSER = "netscape";	# Web browser to start
 my $GUIDE = "guide.gif";	# Filename of dimension guide
 my $CELLS_PER_WIN = 5;          # Number of cells displayed across each window
 my $COMMAND_SYNC_COUNT = 20;    # Sync the DB after this many commands
@@ -228,7 +232,14 @@ sub display_open()
   $Hcells = $CELLS_PER_WIN;
   $Vcells = $CELLS_PER_WIN;
   $daemon = new HTTP::Daemon;
-  print "Please contact me at: <URL:", $daemon->url, ">\n";
+
+  my $url = $daemon->url;
+  my $rc = $TRUE;
+
+  $rc = system "$BROWSER -remote 'openURL($url)' 2>/dev/null"
+    if $BROWSER =~ /netscape/;
+  $rc = system "$BROWSER $url &" if $rc and $BROWSER;
+  print "Please contact me at: <URL:", $url, ">\n" if $rc;
 
   # Mark all windows dirty to ensure they all get redrawn
   display_dirty();
@@ -376,7 +387,7 @@ sub html_layout_window($)
   my $window = "";
 
   # Draw window border, title and current cell number
-  $window .= "<HTML><HEAD><TITLE>Zizzle: $name Window</TITLE></HEAD>\n";
+  $window .= "<HTML><HEAD><TITLE>Zizl: $name Window</TITLE></HEAD>\n";
   $window .= "<BODY BGCOLOR=\"#C0C0C0\"><CENTER>\n";
 #  $window .= "<H1>$name Window ($raster)</H1>\n";
   $window .= "<TABLE CELLPADDING=5>\n";
@@ -420,6 +431,20 @@ sub html_layout_window($)
   return $window;
 }
 
+sub html_start_page()
+{
+  my $page = "";
+  my ($num, $curs);
+
+  $page .= "<HTML><HEAD><TITLE>Zizl</TITLE></HEAD>\n";
+  $page .= "<BODY BGCOLOR=#FFFFFF>\n";
+  $page .= "<H1>Welcome to Zizl(tm)</H1>\n";
+  for ($num = 0, $curs = get_cursor(0);
+       defined $curs; $curs = $ZZ{"$curs+d.2"}, $num++)
+  { $page .= "<H2><A HREF=$num TARGET=$num>$ZZ{$curs} Window</A></H2>\n"; }
+  $page .= "</BODY></HTML>\n";
+  return $page;
+}
 
 #
 # Handle keyboard input.
@@ -458,7 +483,7 @@ sub input_get_direction()
 
 sub catchsig()
 # Handle fatal signals
-{ $Zigzag_Terminated = $_[0]; }
+{ $Zigzag_Terminated = $_[0]; die "Terminated"; }
 
 sub user_error($$)
 # Handle user errors
@@ -510,6 +535,17 @@ sub idle()
   select(undef, undef, undef, 0.1);        # sleep for 1/10 second
 }
 
+#
+# Network helper function
+#
+sub html_send($$)
+{
+  my ($connection, $content) = @_;
+
+  my $response = new HTTP::Response(RC_OK);
+  $response->content($content);
+  $connection->send_response($response);
+}
 
 #
 # Begin main.
@@ -530,7 +566,9 @@ while (my $connection = $daemon->accept)
     else
     {
       my $path = $request->url->path;
-      if ($path =~ m#^/$GUIDE$#)
+      if ($path eq "/")
+      { html_send($connection, html_start_page()); }
+      elsif ($path =~ m#^/$GUIDE$#)
       { $connection->send_file_response($GUIDE); }
       elsif (my ($win) = ($path =~ m#^/(\d+)$#))
       {
@@ -539,11 +577,7 @@ while (my $connection = $daemon->accept)
         if ($@)
         { $connection->send_error(RC_INTERNAL_SERVER_ERROR, $@); }
         else
-        {
-          my $response = new HTTP::Response(RC_OK);
-          $response->content($content);
-          $connection->send_response($response);
-        }
+        { html_send($connection, $content); }
       }
       else
       { $connection->send_error(RC_FORBIDDEN); }
@@ -554,9 +588,10 @@ while (my $connection = $daemon->accept)
 }
 display_close();
 db_close();
-die if $@;
-print STDERR "Terminated by $Zigzag_Terminated signal\n" 
-  if $Zigzag_Terminated;
+if ($Zigzag_Terminated)
+{ print STDERR "Terminated by $Zigzag_Terminated signal\n"; }
+else
+{ die if $@; }
 
 #
 # End.
