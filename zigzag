@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-# Xanadu(R) DIMENSIA(tm) Hyperstructure Kit, $Revision: 0.59 $
+# Xanadu(R) DIMENSIA(tm) Hyperstructure Kit, $Revision: 0.60 $
 #
 # Designed by Ted Nelson
 # Programmed by Andrew Pam ("xanni") and Bek Oberin ("gossamer")
@@ -25,9 +25,12 @@
 # ===================== Change Log
 #
 # Inital zigzag implementation
-# $Id: zigzag,v 0.59 1998/11/21 05:36:19 xanni Exp $
+# $Id: zigzag,v 0.60 1998/11/21 08:24:21 xanni Exp $
 #
 # $Log: zigzag,v $
+# Revision 0.60  1998/11/21 08:24:21  xanni
+# Introduced window_draw_preview, cleaned up display_draw_quad
+#
 # Revision 0.59  1998/11/21 05:36:19  xanni
 # Separated curses-specific globals, renamed $Cursor_Len to $Cell_Width,
 # created $Window_Xcentre and $Window_Ycentre, modified all row and
@@ -104,8 +107,8 @@ use File::Copy qw(copy);
 # Use the $TRUE and $FALSE constants instead of "1" and "0"
 
 # Define constants
-#my ($VERSION) = q$Revision: 0.59 $ =~ /([\d\.]+)/;
-my $VERSION = q$Id: zigzag,v 0.59 1998/11/21 05:36:19 xanni Exp $;
+#my ($VERSION) = q$Revision: 0.60 $ =~ /([\d\.]+)/;
+my $VERSION = q$Id: zigzag,v 0.60 1998/11/21 08:24:21 xanni Exp $;
 my $FALSE = 0;
 my $TRUE = !$FALSE;
 my $CELLS_PER_WIN = 5;           # Number of cells displayed across each window
@@ -1631,28 +1634,44 @@ sub display_draw_cell($$$$)
   attrset($win, A_NORMAL);
 }
 
-sub display_draw_quad($$$$)
-# Draw given part of a quad cell starting at row
+sub display_draw_quad($$$)
+# Draw all or part of a quad cell
 {
-  my ($win, $contents, $row, $width) = @_;
+  my ($win, $cell, $preview) = @_;
+  my $contents = "";
+  my $width = ($COLS / 2 - 1) - $Window_Xcentre;
+  # $maxlen = the maximum amount of cell contents we'll have room to display
+  my $maxlen = $width * $Window_Ycentre;
 
+  @_ = get_contained($cell);
+  do
+  { $contents .= substr(get_cell_contents(shift), 0, $maxlen) . "\n"; }
+  until (($#_ < 0) || (length($contents) >= $maxlen));
+  $_ = wordbreak($contents, $width);
+  $contents = substr($contents, length);
   attrset($win, A_REVERSE);
-  addnstr($win, $Window_Ycentre + $row, $Window_Xcentre,
-          display_monospace($contents, $width), $width);
+  addnstr($win, $Window_Ycentre, $Window_Xcentre,
+          display_monospace($_, $width), $width);
   attrset($win, A_NORMAL);
+  return if $preview;
+
+  # Draw the remainder of the cell contents
+  my $i;
+  for ($i = 1; $Window_Ycentre + $i < $LINES - ($USE_STATUSBAR ? 2 : 1); $i++)
+  {
+    $_ = wordbreak($contents, $width);
+    $contents = substr($contents, length);
+    attrset($win, A_REVERSE);
+    addnstr($win, $Window_Ycentre + $i, $Window_Xcentre,
+            display_monospace($_, $width), $width);
+    attrset($win, A_NORMAL);
+  }
 }
 
-
-#
-# Functions that draw things in a given window.  The windows are a
-# logical thing that may be any subsection of the display, or all
-# of it.
-# Named: window_draw_*
-#
-sub window_draw($$)
+sub display_draw_window($$)
 # Redraw given display window
 {
-  my ($number, $full) = @_;
+  my ($number, $preview) = @_;
   # Local variables
   my $win = $Window[$number];
   my $curs = get_cursor($number);
@@ -1668,30 +1687,29 @@ sub window_draw($$)
   my $quad = ($raster =~ /Q$/);
 
   # Draw window border, title and current cell number
-  if ($full)
+  erase($win) unless $preview;
+  attrset($win, A_NORMAL);
+  box($win, 0, 0);
+  addstr($win, 0, int($COLS / 4) - int(length($name) / 2) - 6,
+         " $name Window ($raster) ");
+  if ($USE_STATUSBAR)
   {
-    erase($win);
-    attrset($win, A_NORMAL);
-    box($win, 0, 0);
-    addstr($win, 0, int($COLS / 4) - int(length($name) / 2) - 6,
-           " $name Window ($raster) ");
-    if ($USE_STATUSBAR)
-    {
-      addstr($win, $LINES - 2, int($COLS / 2) - length($cell) - 3, " $cell ");
-    }
-    else
-    {
-      addstr($Window[0], $LINES - 1, 1, " $Input_Buffer ")
-        if (defined $Input_Buffer) && ($number == 0);
-      addstr($win, $LINES - 1, int($COLS / 2) - length($cell) - 3, " $cell ");
-    }
+    addstr($win, $LINES - 2, int($COLS / 2) - length($cell) - 3, " $cell ");
+  }
+  else
+  {
+    addstr($Window[0], $LINES - 1, 1, " $Input_Buffer ")
+      if (defined $Input_Buffer) && ($number == 0);
+    addstr($win, $LINES - 1, int($COLS / 2) - length($cell) - 3, " $cell ");
   }
 
   # Display window contents.
-  if ($raster =~ /^H/)
-  { window_draw_Hraster($number, $cell, $right, $down, $quad, $full); }
+  if ($preview)
+  { window_draw_preview($number, $cell, $right, $down, $quad); }
+  elsif ($raster =~ /^H/)
+  { window_draw_Hraster($number, $cell, $right, $down, $quad); }
   else
-  { window_draw_Iraster($number, $cell, $right, $down, $quad, $full); }
+  { window_draw_Iraster($number, $cell, $right, $down, $quad); }
 
   attrset($win, A_BOLD);
   # Display clone flag if we aren't using lots of colours
@@ -1710,42 +1728,52 @@ sub window_draw($$)
   addstr($win, 5, 1, "$down ");
   attrset($win, A_BOLD);
 
-  $Window_Dirty[$number] = $FALSE if $full;
+  $Window_Dirty[$number] = $FALSE unless $preview;
   display_refresh($win);
 }
 
-sub window_draw_Iraster($$$$$$)
+
+#
+# Functions that draw things in a given window.  The windows are a
+# logical thing that may be any subsection of the display, or all
+# of it.
+# Named: window_draw_*
+#
+sub window_draw_preview($$$$$)
+# Draw a quick preview of the window starting at cell
+{
+  my ($number, $cell, $right, $down, $quad) = @_;
+  my $win = $Window[$number];
+
+  if ($quad)
+  { display_draw_quad($win, $cell, $TRUE); }
+  else
+  {
+    display_draw_cell($win, $cell, 0, 0);
+    window_draw_cells_horizontal($win, $cell, 0, $right, 1);
+    window_draw_cells_vertical($win, $cell, 0, $down, 1);
+  }
+  window_draw_cells_horizontal($win, $cell, 0, reverse_sign($right), -1);
+  window_draw_cells_vertical($win, $cell, 0, reverse_sign($down), -1);
+}
+
+sub window_draw_Iraster($$$$$)
 # Horizontal ("I raster") window redraw starting at cell
 {
-  my ($number, $cell, $right, $down, $quad, $full) = @_;
+  my ($number, $cell, $right, $down, $quad) = @_;
   my $win = $Window[$number];
   my $left = reverse_sign($right);
   my $up = reverse_sign($down);
   my ($y, $i, $j);
-  my $contents = "";
-  my $width = ($COLS / 2 - 1) - $Window_Xcentre;
 
   if ($quad)
-  {
-    # $maxlen = the maximum amount of cell contents we'll have room to display
-    my $maxlen = $width * $Window_Ycentre;
-
-    @_ = get_contained($cell);
-    do
-    { $contents .= substr(get_cell_contents(shift), 0, $maxlen) . "\n"; }
-    until (($#_ < 0) || (length($contents) >= $maxlen));
-    $_ = wordbreak($contents, $width);
-    $contents = substr($contents, length);
-    display_draw_quad($win, $_, 0, $width);
-  }
+  { display_draw_quad($win, $cell, $FALSE); }
   else
   {
     display_draw_cell($win, $cell, 0, 0);
     window_draw_cells_horizontal($win, $cell, 0, $right, 1);
   }
-
   window_draw_cells_horizontal($win, $cell, 0, $left, -1);
-  return unless $full;
 
   # Draw up to half a screen each above and below if necessary
   for ($y = 1, $i = $j = $cell;
@@ -1775,51 +1803,25 @@ sub window_draw_Iraster($$$$$$)
       window_draw_cells_horizontal($win, $j, $y, $left, -1);
     }
   }
-
-  if ($quad)
-  {
-    # Draw the remainder of the cell contents
-    for ($y = 1; $Window_Ycentre + $y < $LINES - ($USE_STATUSBAR ? 2 : 1); $y++)
-    {
-      $_ = wordbreak($contents, $width);
-      $contents = substr($contents, length);
-      display_draw_quad($win, $_, $y, $width);
-    }
-  }
 }
 
-sub window_draw_Hraster($$$$$$)
+sub window_draw_Hraster($$$$$)
 # Vertical ("H raster") window redraw starting at cell
 {
-  my ($number, $cell, $right, $down, $quad, $full) = @_;
+  my ($number, $cell, $right, $down, $quad) = @_;
   my $win = $Window[$number];
   my $left = reverse_sign($right);
   my $up = reverse_sign($down);
   my ($x, $i, $j);
-  my $contents = "";
-  my $width = ($COLS / 2 - 1) - $Window_Xcentre;
 
   if ($quad)
-  {
-    # $maxlen = the maximum amount of cell contents we'll have room to display
-    my $maxlen = $width * $Window_Ycentre;
-
-    @_ = get_contained($cell);
-    do
-    { $contents .= substr(get_cell_contents(shift), 0, $maxlen) . "\n"; }
-    until (($#_ < 0) || (length($contents) >= $maxlen));
-    $_ = wordbreak($contents, $width);
-    $contents = substr($contents, length);
-    display_draw_quad($win, $_, 0, $width);
-  }
+  { display_draw_quad($win, $cell, $FALSE); }
   else
   {
     display_draw_cell($win, $cell, 0, 0);
     window_draw_cells_vertical($win, $cell, 0, $down, 1);
   }
-
   window_draw_cells_vertical($win, $cell, 0, $up, -1);
-  return unless $full;
 
   # Draw up to half a screen each left and right if necessary
   for ($x = 1, $i = $j = $cell;
@@ -1846,17 +1848,6 @@ sub window_draw_Hraster($$$$$$)
         window_draw_cells_vertical($win, $j, $x, $down, 1);
       }
       window_draw_cells_vertical($win, $j, $x, $up, -1);
-    }
-  }
-
-  if ($quad)
-  {
-    # Draw the remainder of the cell contents
-    for ($j = 1; $Window_Ycentre + $j < $LINES - ($USE_STATUSBAR ? 2 : 1); $j++)
-    {
-      $_ = wordbreak($contents, $width);
-      $contents = substr($contents, length);
-      display_draw_quad($win, $_, $j, $width);
     }
   }
 }
@@ -2183,7 +2174,7 @@ eval
 
   # Partially or fully redraw dirty windows
   for ($i = 0; $i <= $#Window_Dirty; $i++)
-  { window_draw($i, !defined($key_pressed)) if $Window_Dirty[$i]; }
+  { display_draw_window($i, defined($key_pressed)) if $Window_Dirty[$i]; }
 
   if (!defined($key_pressed))
   {
