@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-# Xanadu(R) DIMENSIA(tm) Hyperstructure Kit, $Revision: 0.58 $
+# Xanadu(R) DIMENSIA(tm) Hyperstructure Kit, $Revision: 0.59 $
 #
 # Designed by Ted Nelson
 # Programmed by Andrew Pam ("xanni") and Bek Oberin ("gossamer")
@@ -25,9 +25,15 @@
 # ===================== Change Log
 #
 # Inital zigzag implementation
-# $Id: zigzag,v 0.58 1998/11/21 02:59:23 xanni Exp $
+# $Id: zigzag,v 0.59 1998/11/21 05:36:19 xanni Exp $
 #
 # $Log: zigzag,v $
+# Revision 0.59  1998/11/21 05:36:19  xanni
+# Separated curses-specific globals, renamed $Cursor_Len to $Cell_Width,
+# created $Window_Xcentre and $Window_Ycentre, modified all row and
+# column parameters to be (UI-toolkit independent) grid rows and columns
+# instead of character-cell positions.
+#
 # Revision 0.58  1998/11/21 02:59:23  xanni
 # Renamed UI toolkit specific functions to start with display_
 # Minor updates to status bar code (defined $STATUS_DELAY, moved
@@ -98,8 +104,8 @@ use File::Copy qw(copy);
 # Use the $TRUE and $FALSE constants instead of "1" and "0"
 
 # Define constants
-#my ($VERSION) = q$Revision: 0.58 $ =~ /([\d\.]+)/;
-my $VERSION = q$Id: zigzag,v 0.58 1998/11/21 02:59:23 xanni Exp $;
+#my ($VERSION) = q$Revision: 0.59 $ =~ /([\d\.]+)/;
+my $VERSION = q$Id: zigzag,v 0.59 1998/11/21 05:36:19 xanni Exp $;
 my $FALSE = 0;
 my $TRUE = !$FALSE;
 my $CELLS_PER_WIN = 5;           # Number of cells displayed across each window
@@ -118,18 +124,21 @@ my $BACKUP_FILE_SUFFIX = ".bak";
 
 # Declare globals
 my %ZZ;                          # The Zigzag cells and links
-my @Window;                      # Curses window handles
-my $Status;                      # Status bar handle
 my $StatusTimer;                 # Times messages' duration on the status bar
 my @Window_Dirty;                # Flags to indicate windows need redrawing
 my $Status_Dirty;                # Flags to indicate status bar needs redrawing
 my $Input_Buffer;                # Cell number entered from the keyboard
-my $Cursor_Len;                  # Current display width of the cursors
 my $Display_Resized;             # True when window has been resized
 my $ZigZag_Terminated;           # True when interrupted by a signal
-my $Display_Has_Colour;          # True if colour is supported
 my $Command_Count;               # Counts commands between DB syncs
 my $DB_Ref;                      # We use this for sync'ing.
+# curses-specific globals
+my @Window;                      # Curses window handles
+my $Cell_Width;                  # Current display width of the cells
+my $Display_Has_Colour;          # True if colour is supported
+my $Status;                      # Status bar handle
+my $Window_Xcentre;		 # Centre column of curses windows
+my $Window_Ycentre;		 # Centre row of curses windows
 
 # Initialise global zigzag data structures
 my %Keymap_Directions =
@@ -1516,7 +1525,9 @@ sub display_open()
   $Window[0] = newwin($LINES - $Reserved, $COLS / 2, 0, 0);
   $Window[1] = newwin($LINES - $Reserved, $COLS / 2, 0, $COLS / 2);
 
-  $Cursor_Len = int(($COLS - 1) / ($CELLS_PER_WIN * 2));
+  $Cell_Width = int(($COLS - 1) / ($CELLS_PER_WIN * 2));
+  $Window_Xcentre = int($COLS / 4) - int($Cell_Width / 2);
+  $Window_Ycentre = int(($LINES - 1) / 2);
 
   # Mark all windows dirty to ensure they all get redrawn
   # We can't use foreach (@Window_Dirty) because the first time this code
@@ -1613,19 +1624,21 @@ sub display_draw_cell($$$$)
   # Colour/highlight the cursors
   attron($win, $Display_Has_Colour ? COLOR_PAIR(6) : A_UNDERLINE) if $number == 1;
   attron($win, $Display_Has_Colour ? COLOR_PAIR(7) : A_REVERSE) if $number > 1;
-  addnstr($win, $row, $col,
-          display_monospace($content, $Cursor_Len - 1), $Cursor_Len - 1);
+  addnstr($win, $Window_Ycentre + $row * 2,
+          $Window_Xcentre + $col * $Cell_Width,
+          display_monospace($content, $Cell_Width - 1), $Cell_Width - 1);
   # End colour/highlight
   attrset($win, A_NORMAL);
 }
 
-sub display_draw_quad($$$$$)
-# Draw given part of a quad cell starting at row and column
+sub display_draw_quad($$$$)
+# Draw given part of a quad cell starting at row
 {
-  my ($win, $contents, $row, $col, $width) = @_;
+  my ($win, $contents, $row, $width) = @_;
 
   attrset($win, A_REVERSE);
-  addnstr($win, $row, $col, display_monospace($contents, $width), $width);
+  addnstr($win, $Window_Ycentre + $row, $Window_Xcentre,
+          display_monospace($contents, $width), $width);
   attrset($win, A_NORMAL);
 }
 
@@ -1653,8 +1666,6 @@ sub window_draw($$)
   my $out = $ZZ{$curs};
   my $raster = $ZZ{$ZZ{"$curs+d.1"}};
   my $quad = ($raster =~ /Q$/);
-  my $row = int(($LINES - 1) / 2);
-  my $col = int($COLS / 4) - int($Cursor_Len / 2);
 
   # Draw window border, title and current cell number
   if ($full)
@@ -1678,18 +1689,18 @@ sub window_draw($$)
 
   # Display window contents.
   if ($raster =~ /^H/)
-  { window_draw_Hraster($number, $cell, $row, $col, $right, $down, $quad, $full); }
+  { window_draw_Hraster($number, $cell, $right, $down, $quad, $full); }
   else
-  { window_draw_Iraster($number, $cell, $row, $col, $right, $down, $quad, $full); }
+  { window_draw_Iraster($number, $cell, $right, $down, $quad, $full); }
 
   attrset($win, A_BOLD);
   # Display clone flag if we aren't using lots of colours
   if (!$LOTS_OF_COLOURS && is_clone($cell))
-  { addch($win, $row - 1, $col, "c"); }
+  { addch($win, $Window_Ycentre - 1, $Window_Xcentre, "c"); }
 
   # Display selected-cell flag if we aren't using lots of colours
   if (!$LOTS_OF_COLOURS && is_active_selected($cell))
-  { addch($win, $row - 1, $col, "m"); }
+  { addch($win, $Window_Ycentre - 1, $Window_Xcentre, "m"); }
 
   # Display dimension guide
   addstr($win, 1, 1, "+---> $right ");
@@ -1703,48 +1714,52 @@ sub window_draw($$)
   display_refresh($win);
 }
 
-sub window_draw_Iraster($$$$$$$$)
-# Horizontal ("I raster") window redraw starting at cell, row and column
+sub window_draw_Iraster($$$$$$)
+# Horizontal ("I raster") window redraw starting at cell
 {
-  my ($number, $cell, $row, $col, $right, $down, $quad, $full) = @_;
+  my ($number, $cell, $right, $down, $quad, $full) = @_;
   my $win = $Window[$number];
   my $left = reverse_sign($right);
   my $up = reverse_sign($down);
   my ($y, $i, $j);
   my $contents = "";
-  my $width = ($COLS / 2 - 1) - $col;
+  my $width = ($COLS / 2 - 1) - $Window_Xcentre;
 
   if ($quad)
   {
+    # $maxlen = the maximum amount of cell contents we'll have room to display
+    my $maxlen = $width * $Window_Ycentre;
+
     @_ = get_contained($cell);
     do
-    { $contents .= substr(get_cell_contents(shift), 0, $width * $row) . "\n"; }
-    until (($#_ < 0) || (length($contents) >= $width * $row));
+    { $contents .= substr(get_cell_contents(shift), 0, $maxlen) . "\n"; }
+    until (($#_ < 0) || (length($contents) >= $maxlen));
     $_ = wordbreak($contents, $width);
     $contents = substr($contents, length);
-    display_draw_quad($win, $_, $row, $col, $width);
+    display_draw_quad($win, $_, 0, $width);
   }
   else
   {
-    display_draw_cell($win, $cell, $row, $col);
-    window_draw_cells_horizontal($win, $cell, $row, $col, $right, 1);
+    display_draw_cell($win, $cell, 0, 0);
+    window_draw_cells_horizontal($win, $cell, 0, $right, 1);
   }
 
-  window_draw_cells_horizontal($win, $cell, $row, $col, $left, -1);
+  window_draw_cells_horizontal($win, $cell, 0, $left, -1);
   return unless $full;
 
   # Draw up to half a screen each above and below if necessary
   for ($y = 1, $i = $j = $cell;
-       (defined $i || defined $j || $quad) && ($y * 2 < $row);
+       (defined $i || defined $j || $quad) && ($y * 2 < $Window_Ycentre);
        $y++)
   {
     # Find the next cell above, if any
     if (defined $i && defined ($i = $ZZ{"$i$up"}))
     {
-      addch($win, $row - $y * 2 + 1, $col + int($Cursor_Len / 2), ACS_VLINE);
-      display_draw_cell($win, $i, $row - $y * 2, $col);
-      window_draw_cells_horizontal($win, $i, $row - $y * 2, $col, $left, -1);
-      window_draw_cells_horizontal($win, $i, $row - $y * 2, $col, $right, 1);
+      addch($win, $Window_Ycentre - $y * 2 + 1,
+            $Window_Xcentre + int($Cell_Width / 2), ACS_VLINE);
+      display_draw_cell($win, $i, -$y, 0);
+      window_draw_cells_horizontal($win, $i, -$y, $left, -1);
+      window_draw_cells_horizontal($win, $i, -$y, $right, 1);
     }
 
     # Find the next cell below, if any
@@ -1752,54 +1767,58 @@ sub window_draw_Iraster($$$$$$$$)
     {
       if (!$quad)
       {
-        addch($win, $row + $y * 2 - 1, $col + int($Cursor_Len / 2), ACS_VLINE);
-        display_draw_cell($win, $j, $row + $y * 2, $col);
-        window_draw_cells_horizontal($win, $j, $row + $y * 2, $col, $right, 1);
+        addch($win, $Window_Ycentre + $y * 2 - 1,
+              $Window_Xcentre + int($Cell_Width / 2), ACS_VLINE);
+        display_draw_cell($win, $j, $y, 0);
+        window_draw_cells_horizontal($win, $j, $y, $right, 1);
       }
-      window_draw_cells_horizontal($win, $j, $row + $y * 2, $col, $left, -1);
+      window_draw_cells_horizontal($win, $j, $y, $left, -1);
     }
   }
 
   if ($quad)
   {
     # Draw the remainder of the cell contents
-    for ($y = 1; $y < $row; $y++)
+    for ($y = 1; $Window_Ycentre + $y < $LINES - ($USE_STATUSBAR ? 2 : 1); $y++)
     {
       $_ = wordbreak($contents, $width);
       $contents = substr($contents, length);
-      display_draw_quad($win, $_, $row + $y, $col, $width);
+      display_draw_quad($win, $_, $y, $width);
     }
   }
 }
 
-sub window_draw_Hraster($$$$$$$$)
-# Vertical ("H raster") window redraw starting at cell, row and column
+sub window_draw_Hraster($$$$$$)
+# Vertical ("H raster") window redraw starting at cell
 {
-  my ($number, $cell, $row, $col, $right, $down, $quad, $full) = @_;
+  my ($number, $cell, $right, $down, $quad, $full) = @_;
   my $win = $Window[$number];
   my $left = reverse_sign($right);
   my $up = reverse_sign($down);
   my ($x, $i, $j);
   my $contents = "";
-  my $width = ($COLS / 2 - 1) - $col;
+  my $width = ($COLS / 2 - 1) - $Window_Xcentre;
 
   if ($quad)
   {
+    # $maxlen = the maximum amount of cell contents we'll have room to display
+    my $maxlen = $width * $Window_Ycentre;
+
     @_ = get_contained($cell);
     do
-    { $contents .= substr(get_cell_contents(shift), 0, $width * $row) . "\n"; }
-    until (($#_ < 0) || (length($contents) >= $width * $row));
+    { $contents .= substr(get_cell_contents(shift), 0, $maxlen) . "\n"; }
+    until (($#_ < 0) || (length($contents) >= $maxlen));
     $_ = wordbreak($contents, $width);
     $contents = substr($contents, length);
-    display_draw_quad($win, $_, $row, $col, $width);
+    display_draw_quad($win, $_, 0, $width);
   }
   else
   {
-    display_draw_cell($win, $cell, $row, $col);
-    window_draw_cells_vertical($win, $cell, $row, $col, $down, 1);
+    display_draw_cell($win, $cell, 0, 0);
+    window_draw_cells_vertical($win, $cell, 0, $down, 1);
   }
 
-  window_draw_cells_vertical($win, $cell, $row, $col, $up, -1);
+  window_draw_cells_vertical($win, $cell, 0, $up, -1);
   return unless $full;
 
   # Draw up to half a screen each left and right if necessary
@@ -1809,10 +1828,11 @@ sub window_draw_Hraster($$$$$$$$)
     # Find the next cell to the left, if any
     if (defined $i && defined ($i = $ZZ{"$i$left"}))
     {
-      addch($win, $row, $col - ($x - 1) * $Cursor_Len - 1, ACS_HLINE);
-      display_draw_cell($win, $i, $row, $col - $x * $Cursor_Len);
-      window_draw_cells_vertical($win, $i, $row, $col - $x * $Cursor_Len, $up, -1);
-      window_draw_cells_vertical($win, $i, $row, $col - $x * $Cursor_Len, $down, 1);
+      addch($win, $Window_Ycentre,
+            $Window_Xcentre - ($x - 1) * $Cell_Width - 1, ACS_HLINE);
+      display_draw_cell($win, $i, 0, -$x);
+      window_draw_cells_vertical($win, $i, -$x, $up, -1);
+      window_draw_cells_vertical($win, $i, -$x, $down, 1);
     }
 
     # Find the next cell to the right, if any
@@ -1820,60 +1840,65 @@ sub window_draw_Hraster($$$$$$$$)
     {
       if (!$quad)
       {
-        addch($win, $row, $col + $x * $Cursor_Len - 1, ACS_HLINE);
-        display_draw_cell($win, $j, $row, $col + $x * $Cursor_Len);
-        window_draw_cells_vertical($win, $j, $row, $col + $x * $Cursor_Len, $down, 1);
+        addch($win, $Window_Ycentre,
+              $Window_Xcentre + $x * $Cell_Width - 1, ACS_HLINE);
+        display_draw_cell($win, $j, 0, $x);
+        window_draw_cells_vertical($win, $j, $x, $down, 1);
       }
-      window_draw_cells_vertical($win, $j, $row, $col + $x * $Cursor_Len, $up, -1);
+      window_draw_cells_vertical($win, $j, $x, $up, -1);
     }
   }
 
   if ($quad)
   {
     # Draw the remainder of the cell contents
-    for ($j = 1; $j < $row; $j++)
+    for ($j = 1; $Window_Ycentre + $j < $LINES - ($USE_STATUSBAR ? 2 : 1); $j++)
     {
       $_ = wordbreak($contents, $width);
       $contents = substr($contents, length);
-      display_draw_quad($win, $_, $row + $j, $col, $width);
+      display_draw_quad($win, $_, $j, $width);
     }
   }
 }
 
 sub window_draw_cells_horizontal($$$$$$)
-# Draw cells horizontally starting at cell, row and column
+# Draw cells horizontally at row starting at cell
 {
-  my ($win, $cell, $row, $col, $dim, $sign) = @_;
-  my $inc = $sign * $Cursor_Len;
-  my $ofs = ($sign == 1) ? $Cursor_Len - 1 : -1;
-  my $i = 1;
+  my ($win, $cell, $row, $dim, $sign) = @_;
+  my $inc = $sign * $Cell_Width;
+  my $ofs = ($sign == 1) ? $Cell_Width - 1 : -1;
+  my $i = 0;
 
   # Draw at most half a screen of cells
-  while (defined $cell && ($i++ < int(($CELLS_PER_WIN + 1) / 2)))
+  while (defined $cell && ($i++ < int($CELLS_PER_WIN / 2)))
   {
-    # Find the next cell to the left, if any
+    # Find the next cell, if any
     if (defined ($cell = $ZZ{"$cell$dim"}))
     {
-      addch($win, $row, $col + $ofs, ACS_HLINE);
-      display_draw_cell($win, $cell, $row, $col += $inc);
+      addch($win, $Window_Ycentre + $row * 2,
+            $Window_Xcentre + $ofs, ACS_HLINE);
+      display_draw_cell($win, $cell, $row, $sign * $i);
+      $ofs += $inc;
     }
   }
 }
 
 sub window_draw_cells_vertical($$$$$$)
-# Draw cells vertically starting at cell, row and column
+# Draw cells vertically at col starting at cell
 {
-  my ($win, $cell, $row, $col, $dim, $sign) = @_;
-  my $i = 1;
+  my ($win, $cell, $col, $dim, $sign) = @_;
+  my $i = 0;
 
   # Draw at most half a screen of cells
-  while (defined $cell && ($i++ < int(($LINES + 1) / 4)))
+  while (defined $cell && ($i++ < int(($LINES + 1) / 4) - 1))
   {
-    # Find the next cell above, if any
+    # Find the next cell, if any
     if (defined ($cell = $ZZ{"$cell$dim"}))
     {
-      addch($win, $row += $sign, $col + int($Cursor_Len / 2), ACS_VLINE);
-      display_draw_cell($win, $cell, $row += $sign, $col);
+      addch($win, $Window_Ycentre + $sign * $i * 2 - $sign,
+            $Window_Xcentre + $col * $Cell_Width + int($Cell_Width / 2),
+            ACS_VLINE);
+      display_draw_cell($win, $cell, $sign * $i, $col);
     }
   }
 }
