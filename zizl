@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-# Xanadu(R) Zigzag(tm) Hyperstructure Kit HTML interface, $Revision: 0.2 $
+# Xanadu(R) Zigzag(tm) Hyperstructure Kit HTML interface, $Revision: 0.3 $
 #
 # Designed by Ted Nelson
 # Programmed by Andrew Pam ("xanni") and Bek Oberin ("gossamer")
@@ -25,9 +25,12 @@
 # ===================== Change Log
 #
 # Inital zigzag implementation
-# $Id: zizl,v 0.2 1999/01/26 03:44:02 xanni Exp $
+# $Id: zizl,v 0.3 1999/01/26 06:09:46 xanni Exp $
 #
 # $Log: zizl,v $
+# Revision 0.3  1999/01/26 06:09:46  xanni
+# Implemented quad view
+#
 # Revision 0.2  1999/01/26 03:44:02  xanni
 # Rewrote code to generate HTML directly
 #
@@ -51,8 +54,8 @@ use Zigzag;
 # Use the $TRUE and $FALSE constants instead of "1" and "0"
 
 # Define constants
-#my ($VERSION) = q$Revision: 0.2 $ =~ /([\d\.]+)/;
-my $VERSION = q$Id: zizl,v 0.2 1999/01/26 03:44:02 xanni Exp $;
+#my ($VERSION) = q$Revision: 0.3 $ =~ /([\d\.]+)/;
+my $VERSION = q$Id: zizl,v 0.3 1999/01/26 06:09:46 xanni Exp $;
 my $FALSE = 0;
 my $TRUE = !$FALSE;
 my $BGCOLOR = "#FFFFFF";	# White background
@@ -233,11 +236,19 @@ sub display_dirty()
 }
 
 #
-# Functions that draw things in a given window.  The windows are a
-# logical thing that may be any subsection of the display, or all
-# of it.
-# Named: display_draw_*
+# Functions that generate HTML.
 #
+sub html_process_cell($)
+# Process cell contents for HTML output
+{
+  my ($content) = @_;
+
+  $content =~ s/&/&amp;/g;
+  $content =~ s/</&lt;/g;
+  $content =~ s/\n/<BR>\n/g;
+  return $content;
+}
+
 sub html_table_cell($)
 # Draw cell contents
 {
@@ -249,16 +260,14 @@ sub html_table_cell($)
   while (defined $cursor)
   { $cursor = $ZZ{"$cursor-d.2"};  $number++; }
 #  ($content) = split(/\n/, get_cell_contents($cell));	# Just the first line
-  $content = get_cell_contents($cell);
-  $content =~ s/&/&amp;/g;
-  $content =~ s/</&lt;/g;
-  $content =~ s/\n/<BR>\n/g;
+# NOTE: We should probably handle containment if we're going to show the lot!
+  $content = html_process_cell(get_cell_contents($cell));
   $content = "<FONT COLOR=#FFFFFF>$content</FONT>" if is_selected($cell);
   my $bgcolor = $BGCOLOR;
   $bgcolor = "#FFFF00" if is_clone($cell);
   $bgcolor = "#000000" if is_selected($cell);
   $bgcolor = "#00FF00" if $number == 1;
-  $bgcolor = "#7F7FFF" if $number > 1;
+  $bgcolor = "#5F5FFF" if $number > 1;
   return "<TD BGCOLOR=$bgcolor>$content</TD>";
 }
 
@@ -267,33 +276,15 @@ sub html_table_quad($)
 {
   my ($cell) = @_;
   my $contents = "";
-#  my $width = ($COLS / 2 - 1) - $Window_Xcentre;
-#  # $maxlen = the maximum amount of cell contents we'll have room to display
-#  my $maxlen = $width * $Window_Ycentre;
-#
-#  @_ = get_contained($cell);
-#  do
-#  { $contents .= substr(get_cell_contents(shift), 0, $maxlen) . "\n"; }
-#  until (($#_ < 0) || (length($contents) >= $maxlen));
-#  $_ = wordbreak($contents, $width);
-#  $contents = substr($contents, length);
-#  attrset($win, A_REVERSE);
-#  addnstr($win, $Window_Ycentre, $Window_Xcentre,
-#          display_monospace($_, $width), $width);
-#  attrset($win, A_NORMAL);
-#
-#  # Draw the remainder of the cell contents
-#  my $i;
-#  for ($i = 1; $Window_Ycentre + $i < $LINES - ($USE_STATUSBAR ? 2 : 1); $i++)
-#  {
-#    $_ = wordbreak($contents, $width);
-#    $contents = substr($contents, length);
-#    attrset($win, A_REVERSE);
-#    addnstr($win, $Window_Ycentre + $i, $Window_Xcentre,
-#            display_monospace($_, $width), $width);
-#    attrset($win, A_NORMAL);
-#  }
-  return "<TD BGCOLOR=$BGCOLOR>$contents</TD>";
+  # $MAXLEN = the maximum amount of cell contents we'll display
+  my $MAXLEN = 5000;
+
+  @_ = get_contained($cell);
+  do
+  { $contents .= substr(get_cell_contents(shift), 0, $MAXLEN) . "\n"; }
+  until (($#_ < 0) || (length($contents) >= $MAXLEN));
+  $contents = html_process_cell($contents);
+  return "<TD BGCOLOR=$BGCOLOR COLSPAN=$Hcells ROWSPAN=$Vcells>$contents</TD>";
 }
 
 sub html_table_layout($$$)
