@@ -1,0 +1,518 @@
+#!/usr/bin/perl -w
+#
+# Xanadu(R) ZigZag(tm) Hyperstructure Kit HTML interface, $Revision: 0.1 $
+#
+# Designed by Ted Nelson
+# Programmed by Andrew Pam ("xanni") and Bek Oberin ("gossamer")
+# Copyright (c) 1997, 1998 Project Xanadu
+#
+# This is only a partial implementation, with only a few structure and view
+# operations; however, they are enough to allow you to create, view and explore
+# complex multidimensional structures in quantum hyperspace.
+#
+# A forthcoming tutorial will present you with strange spaces to explore,
+# beginning with easy 2D concepts, the peculiar geography of this system and
+# operating recommendations for getting around in it comfortably and changing
+# your structures without losing cells or losing track of your stuff.  (This
+# will emphasize pragmatic adaptations to the peculiarities of this limited
+# implementation.)
+#
+# Forthcoming documentation will explain the space, the theory, structure
+# operations, view operations, and the official planned extensions.
+#
+# For more information, visit http://www.xanadu.net/zz/
+#
+# ===================== Change Log
+#
+# Inital zigzag implementation
+# $Id: zizl,v 0.1 1999/01/07 16:21:16 xanni Exp $
+#
+# $Log: zizl,v $
+# Revision 0.1  1999/01/07 16:21:16  xanni
+# First prototype
+#
+
+use integer;
+use strict;
+use POSIX;
+use HTML::Table; # Available at http://www.cpan.org/modules/by-module/HTML
+		 # Note: if you are using HTML-Table-v0.90 you will need to
+		 # apply the supplied Table.patch before installing it
+
+use ZigZag;
+
+# Note: We are using the following coding conventions:
+# Constants are named in ALLCAPS
+# Global variables are named with Initial Caps
+# Local variables and functions are named in lowercase
+# Put brackets around all function arguments
+# Prototype the number and type of arguments expected by functions
+# Matching braces should line up with each other vertically
+# Use the $TRUE and $FALSE constants instead of "1" and "0"
+
+# Define constants
+#my ($VERSION) = q$Revision: 0.1 $ =~ /([\d\.]+)/;
+my $VERSION = q$Id: zizl,v 0.1 1999/01/07 16:21:16 xanni Exp $;
+my $FALSE = 0;
+my $TRUE = !$FALSE;
+my $BGCOLOR = "#FFFFFF";	# White background
+my $CELLS_PER_WIN = 5;          # Number of cells displayed across each window
+my $COMMAND_SYNC_COUNT = 20;    # Sync the DB after this many commands
+
+# Declare globals
+my $ZigZag_Terminated;          # True when interrupted by a signal
+
+# Initialise global zigzag data structures
+my %Keymap_Directions =
+  ( # Direction key mappings
+    "s"		=> "0L",
+    "S"		=> "0L",
+    "f"		=> "0R",
+    "F"		=> "0R",
+    "e"		=> "0U",
+    "E"		=> "0U",
+    "c"		=> "0D",
+    "C"		=> "0D",
+    "d"		=> "0I",
+    "D"		=> "0O",
+    "j"		=> "1L",
+    "J"		=> "1L",
+#    &KEY_LEFT	=> "1L",
+    "l"		=> "1R",
+    "L"		=> "1R",
+#    &KEY_RIGHT	=> "1R",
+    "i"		=> "1U",
+    "I"		=> "1U",
+#    &KEY_UP	=> "1U",
+    ","		=> "1D",
+#    &KEY_DOWN	=> "1D",
+    "k"		=> "1I",
+#    &KEY_PPAGE	=> "1I",
+    "K"		=> "1O",
+#    &KEY_NPAGE	=> "1O",
+  );
+
+my %Keymap =
+  ( # Keyboard mappings
+    "\r"		=> 'atcursor_execute(0);',
+    "\n"		=> 'atcursor_execute(0);',
+    "<"			=> '@_ = input_get_direction(); atcursor_import(@_) if $_[0];',
+    ">"			=> '@_ = input_get_direction(); atcursor_export(@_) if $_[0];',
+    chr(127)		=> 'atcursor_delete(1);',
+#    &KEY_DC		=> 'atcursor_delete(1);',
+#    &KEY_BACKSPACE	=> 'input_process_backspace();',
+    meta_key("s")	=> 'atcursor_hop(0, "L");',
+    meta_key("f")	=> 'atcursor_hop(0, "R");',
+    meta_key("e")	=> 'atcursor_hop(0, "U");',
+    meta_key("c")	=> 'atcursor_hop(0, "D");',
+    meta_key("D")	=> 'atcursor_edit(0);',
+    meta_key("d")	=> 'atcursor_edit(0);',
+    "\cD"		=> 'atcursor_edit(0);',
+    meta_key("j")	=> 'atcursor_hop(1, "L");',
+    meta_key("l")	=> 'atcursor_hop(1, "R");',
+    meta_key("i")	=> 'atcursor_hop(1, "U");',
+    meta_key(",")	=> 'atcursor_hop(1, "D");',
+    meta_key("K")	=> 'atcursor_edit(1);',
+    meta_key("k")	=> 'atcursor_edit(1);',
+    "\cK"		=> 'atcursor_edit(1);',
+    "b"			=> '@_ = input_get_direction(); atcursor_break_link(@_) if $_[0];',
+    "G"			=> 'cursor_jump_input(get_cursor(0));',
+    "g"			=> 'cursor_jump_input(get_cursor(1));',
+#    &KEY_HOME		=> 'cursor_jump_input(get_cursor(1));',
+    "h"			=> '@_ = input_get_direction(); atcursor_hop(@_) if $_[0];',
+    "\cL"		=> 'display_refresh(curscr()); $@ = "";',
+    "M"			=> 'atcursor_select(0);',
+    "m"			=> 'atcursor_select(1);',
+    meta_key("m")	=> 'rotate_selection()',
+    meta_key("M")	=> 'push_selection()',
+    "N"			=> 'cell_create(0);',
+#    &KEY_IC		=> 'cell_create(0);',
+    "n"			=> 'cell_create(1);',
+    "Q"			=> 'view_quadrant_toggle(0);',
+    "q"			=> 'view_quadrant_toggle(1);',
+    "R"			=> 'view_reset(0);',
+    "r"			=> 'view_reset(1);',
+    "T"			=> 'atcursor_clone(0);',
+    "t"			=> 'atcursor_clone(1);',
+    meta_key("T")	=> 'atcursor_copy(0);',
+    meta_key("t")	=> 'atcursor_copy(1);',
+    "V"			=> 'view_raster_toggle(0);',
+    "v"			=> 'view_raster_toggle(1);',
+    "\cV"		=> 'display_status_draw(version());',
+    meta_key("V")	=> 'display_status_draw(version());',
+    meta_key("v")	=> 'display_status_draw(version());',
+    "X"			=> 'view_rotate(0, "X");',
+    "x"			=> 'view_rotate(1, "X");',
+    "\cX"		=> '$ZigZag_Terminated = "^X";',
+    meta_key("X")	=> 'view_flip(0, "X");',
+    meta_key("x")	=> 'view_flip(1, "X");',
+    "Y"			=> 'view_rotate(0, "Y");',
+    "y"			=> 'view_rotate(1, "Y");',
+    meta_key("Y")	=> 'view_flip(0, "Y");',
+    meta_key("y")	=> 'view_flip(1, "Y");',
+    "Z"			=> 'view_rotate(0, "Z");',
+    "z"			=> 'view_rotate(1, "Z");',
+    meta_key("Z")	=> 'view_flip(0, "Z");',
+    meta_key("z")	=> 'view_flip(1, "Z");',
+  );
+
+
+#
+# Some helper functions
+#
+
+sub version()
+{
+  return "zizzle version $VERSION (ZigZag $ZigZag::VERSION)";
+}
+
+sub meta_key($)
+# This is just a little helper macro, returns the META/ALT key code
+{ 
+  return(chr(ord($_[0]) | 0x80)); 
+}
+
+
+sub cursor_jump_input($)
+# Jump cursor to $Input_Buffer
+# Or to 0 if no input buffer.
+{
+  my $dest = defined($Input_Buffer) ? $Input_Buffer : 0;
+  cursor_jump($_[0], $dest);
+  undef $Input_Buffer;
+}
+
+sub atcursor_edit($)
+# Invoke an external text editor to edit the cell under a given cursor
+{
+  my $cell = get_lastcell(get_lastcell(get_cursor($_[0]), "-d.cursor"), "-d.clone");
+}
+
+sub atcursor_import(@)
+# Import cells from a text file
+{
+  my $curs = get_cursor($_[0]);
+  my $cell = get_lastcell($curs, "-d.cursor");
+  my $dim = get_dimension($curs, $_[1]);
+
+  # Not in the Cursor dimension!
+  return if $dim eq "d.cursor";
+}
+
+sub atcursor_export(@)
+# Export cells to a text file
+{
+  my $curs = get_cursor($_[0]);
+  my $dim = get_dimension($curs, $_[1]);
+  my $start = get_lastcell($curs, "-d.cursor");
+}
+
+
+#
+# Functions that are implemented using a particular user interface toolkit
+# Named: display_*
+#
+sub display_open()
+# (Re)initialise display
+{
+  $Hcells = $CELLS_PER_WIN;
+  $Vcells = $CELLS_PER_WIN;
+
+  # Mark all windows dirty to ensure they all get redrawn
+  display_dirty();
+}
+
+sub display_close()
+# Free all windows
+{
+}
+
+sub display_dirty()
+# The data structure has changed, so we will have to redraw
+{
+}
+
+#
+# Functions that draw things in a given window.  The windows are a
+# logical thing that may be any subsection of the display, or all
+# of it.
+# Named: display_draw_*
+#
+sub html_table_cell($$$$)
+# Draw cell at row and column
+{
+  my ($table, $cell, $row, $col) = @_;
+  my $cursor = $ZZ{"$cell+d.cursor"} unless defined $ZZ{"$cell-d.cursor"};
+  my $number = -1;
+  my $content;
+
+  while (defined $cursor)
+  { $cursor = $ZZ{"$cursor-d.2"};  $number++; }
+#  ($content) = split(/\n/, get_cell_contents($cell));	# Just the first line
+  $content = get_cell_contents($cell);
+  $content =~ s/&/&amp;/g;
+  $content =~ s/</&lt;/g;
+  $content =~ s/\n/<BR>\n/g;
+  $content = "<FONT COLOR=#FFFFFF>$content</FONT>" if is_selected($cell);
+  $row = $Vcells + ($row * 2);
+  $col = $Hcells + ($col * 2);
+  $table->setCell($row, $col, $content);
+  $table->setCellBGColor($row, $col, $BGCOLOR);
+
+  $table->setCellBGColor($row, $col, "#FFFF00") if is_clone($cell);
+  $table->setCellBGColor($row, $col, "#000000") if is_selected($cell);
+  $table->setCellBGColor($row, $col, "#00FF00") if $number == 1;
+  $table->setCellBGColor($row, $col, "#7F7FFF") if $number > 1;
+}
+
+sub html_table_quad($$)
+# Draw a quad cell
+{
+  my ($table, $cell) = @_;
+  my $contents = "";
+#  my $width = ($COLS / 2 - 1) - $Window_Xcentre;
+#  # $maxlen = the maximum amount of cell contents we'll have room to display
+#  my $maxlen = $width * $Window_Ycentre;
+#
+#  @_ = get_contained($cell);
+#  do
+#  { $contents .= substr(get_cell_contents(shift), 0, $maxlen) . "\n"; }
+#  until (($#_ < 0) || (length($contents) >= $maxlen));
+#  $_ = wordbreak($contents, $width);
+#  $contents = substr($contents, length);
+#  attrset($win, A_REVERSE);
+#  addnstr($win, $Window_Ycentre, $Window_Xcentre,
+#          display_monospace($_, $width), $width);
+#  attrset($win, A_NORMAL);
+#
+#  # Draw the remainder of the cell contents
+#  my $i;
+#  for ($i = 1; $Window_Ycentre + $i < $LINES - ($USE_STATUSBAR ? 2 : 1); $i++)
+#  {
+#    $_ = wordbreak($contents, $width);
+#    $contents = substr($contents, length);
+#    attrset($win, A_REVERSE);
+#    addnstr($win, $Window_Ycentre + $i, $Window_Xcentre,
+#            display_monospace($_, $width), $width);
+#    attrset($win, A_NORMAL);
+#  }
+}
+
+sub html_table_link_horizontal($$$)
+# Draw a horizontal connection next to a cell
+{
+  my ($table, $y, $x) = @_;
+
+  $x = $Hcells + ($x * 2) + (($x > 0) ? -1 : 1);
+  $y = $Vcells + $y * 2;
+  $table->setCell($y, $x, "---");
+}
+
+sub html_table_link_vertical($$$)
+# Draw a vertical connection above or below a cell
+{
+  my ($table, $y, $x) = @_;
+
+  $x = $Hcells + $x * 2;
+  $y = $Vcells + ($y * 2) + (($y > 0) ? -1 : 1);
+  $table->setCell($y, $x, "|");
+  $table->setCellAlign($y, $x, "CENTER");
+}
+
+sub html_table_layout($$$)
+# Draw given display window from a layout
+{
+  my ($table, $lref, $quad) = @_;
+  my ($x, $y);
+
+  for ($y = -int($Vcells / 2); $y <= int($Vcells / 2); $y++)
+  {
+    for ($x = -int($Hcells / 2); $x <= int($Hcells / 2); $x++)
+    {
+      if ($quad && ($x == 0) && ($y == 0))
+      { html_table_quad($table, $$lref{"0,0"}); }
+      elsif (!$quad || ($x < 0) || ($y < 0))
+      {
+        my $cell = $$lref{"$x,$y"};
+        html_table_cell($table, $cell, $y, $x) if defined $cell;
+        html_table_link_horizontal($table, $y, $x) if defined $$lref{"$x-$y"};
+        html_table_link_vertical($table, $y, $x) if defined $$lref{"$x|$y"};
+      }
+    }
+  }
+}
+
+sub html_layout_window($)
+# Redraw given display window
+{
+  my ($number) = @_;
+  # Local variables
+  my $curs = get_cursor($number);
+  my $name = $ZZ{$curs};
+  my $cell = get_lastcell($curs, "-d.cursor");
+  $curs = $ZZ{"$curs+d.1"};
+  my $right = $ZZ{$curs};
+  $curs = $ZZ{"$curs+d.1"};
+  my $down = $ZZ{$curs};
+  $curs = $ZZ{"$curs+d.1"};
+  my $out = $ZZ{$curs};
+  my $raster = $ZZ{$ZZ{"$curs+d.1"}};
+  my $quad = ($raster =~ /Q$/);
+
+  # Draw window border, title and current cell number
+  print "<HTML><HEAD><TITLE>Zizzle: $name Window</TITLE></HEAD>\n";
+  print "<BODY BGCOLOR=\"#C0C0C0\"><CENTER>\n";
+#  print"<H1>$name Window ($raster)</H1>\n";
+  my $table = new HTML::Table($Vcells * 2 - 1, $Hcells * 2 - 1);
+  $table->setCaption("$name Window ($raster)", "TOP");
+  $table->setCellPadding(5);
+
+#  if ($USE_STATUSBAR)
+#  {
+#    addstr($win, $LINES - 2, int($COLS / 2) - length($cell) - 3, " $cell ");
+#  }
+#  else
+#  {
+#    addstr($Window[0], $LINES - 1, 1, " $Input_Buffer ")
+#      if (defined $Input_Buffer) && ($number == 0);
+#    addstr($win, $LINES - 1, int($COLS / 2) - length($cell) - 3, " $cell ");
+#  }
+
+  # Display window contents.
+  my %layout;
+  if ($raster =~ /^H/)
+  { layout_Hraster(\%layout, $cell, $right, $down); }
+  else
+  { layout_Iraster(\%layout, $cell, $right, $down); }
+  html_table_layout($table, \%layout, $quad);
+
+  # Display dimension guide
+#  my $guide =	"<FONT COLOR=\"#FF0000\"><PRE>" .
+#		"+---> $right\n" .
+#		"|\\\n" .
+#		"|  \\| $out\n" .
+#		"V  -+\n" .
+#		"$down" .
+#		"</PRE></FONT>";
+  my $guide =	"<TABLE><TR><TD><IMG SRC=guide.gif></TD>" .
+		"<TD><FONT COLOR=\"#FF0000\">$right<BR>" .
+		"<BR>$out</FONT></TD></TR>\n" .
+		"<TR><TD><FONT COLOR=\"#FF0000\">$down</FONT></TD>" .
+		"</TR></TABLE>\n";
+  $table->setCell(1, 1, $guide);
+
+  $table->print;
+  print "</BODY></HTML>\n";
+}
+
+
+#
+# Handle keyboard input.
+# Named: input_*
+#
+sub input_get_any()
+# Attempt to get any input
+# NOTE: This function is also user interface toolkit specific!
+{
+#  my $key = getch();
+#  if (($key eq "\e") && (($_ = getch()) ne -1))
+#  { $key = meta_key($_); }
+#  return $key eq -1 ? undef : $key;
+}
+
+sub input_get_direction()
+# Attempt to get a direction key
+{
+  my $key;
+  while (!defined($key = input_get_any())) {}  # Idle until we get a key
+
+  if ($_ = $Keymap_Directions{$key})
+  { @_ = split //; }
+  else
+  {
+    # The key isn't a direction key
+    user_error(1, $key);
+    undef @_;
+  }
+}
+
+
+#
+# Handle signals and errors
+#
+
+sub catchsig()
+# Handle fatal signals
+{ $ZigZag_Terminated = $_[0]; }
+
+sub user_error($$)
+# Handle user errors
+{
+  my ($errno, $text) = @_;
+
+  # I feel like this next should be a global.  It's not.
+  my @errors =
+  (
+    "Key is not a valid keystroke",
+    "Cannot insert - invalid neigbours",
+    "Cannot jump to invalid or cursor cell",
+    "Error executing cell",
+    "Cannot hop - no neigbours",
+    "Cannot jump to cell that does not exist",
+    "Cannot break link - none exists",
+    "Error opening file",
+    "Cannot insert cells in selected dimension",
+  );
+
+#  beep(); 
+#  if ($errno and $USE_STATUSBAR)
+#  {
+#    $errno--;
+#    my $errmsg = "Error $errno";
+#    $errmsg .= ": $errors[$errno]" if $errno <= $#errors;
+#    if ($text)
+#    { display_status_draw(substr("$errmsg ($text)", 0, $COLS)); }
+#    else
+#    { display_status_draw(substr("$errmsg", 0, $COLS)); }
+#  }
+#
+#  if ($USE_STATUSBAR)
+#  { display_refresh($Status); }
+#  else
+#  { display_refresh(); }
+}
+
+
+#
+# Initialization functions
+#
+
+#
+# Background functions, if any, can be executed here
+#
+sub idle()
+{
+  select(undef, undef, undef, 0.1);        # sleep for 1/10 second
+}
+
+
+#
+# Begin main.
+#
+
+db_open(shift);
+
+# Set the interrupt handlers
+$SIG{INT} = $SIG{TERM} = \&catchsig;
+
+display_open();
+html_layout_window(1);
+display_close();
+db_close();
+die if $@;
+print STDERR "Terminated by $ZigZag_Terminated signal\n" 
+  if $ZigZag_Terminated;
+
+#
+# End.
+#
