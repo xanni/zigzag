@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-# Xanadu(R) Zigzag(tm) Hyperstructure Kit curses interface, $Revision: 0.67 $
+# Xanadu(R) Zigzag(tm) Hyperstructure Kit curses interface, $Revision: 0.68 $
 #
 # Designed by Ted Nelson
 # Programmed by Andrew Pam ("xanni") and Bek Oberin ("gossamer")
@@ -25,9 +25,12 @@
 # ===================== Change Log
 #
 # Inital zigzag implementation
-# $Id: zigzag,v 0.67 1999/03/13 05:03:44 xanni Exp $
+# $Id: zigzag,v 0.68 1999/03/13 13:06:35 xanni Exp $
 #
 # $Log: zigzag,v $
+# Revision 0.68  1999/03/13 13:06:35  xanni
+# Added two new user_error() messages for invalid deletion attempts
+#
 # Revision 0.67  1999/03/13 05:03:44  xanni
 # Minor naming fixes, cell_create() moved from Zigzag.pm
 #
@@ -80,8 +83,8 @@ use Zigzag;
 # Use the $TRUE and $FALSE constants instead of "1" and "0"
 
 # Define constants
-#my ($VERSION) = q$Revision: 0.67 $ =~ /([\d\.]+)/;
-my $VERSION = q$Id: zigzag,v 0.67 1999/03/13 05:03:44 xanni Exp $;
+#my ($VERSION) = q$Revision: 0.68 $ =~ /([\d\.]+)/;
+my $VERSION = q$Id: zigzag,v 0.68 1999/03/13 13:06:35 xanni Exp $;
 my $FALSE = 0;
 my $TRUE = !$FALSE;
 my $CELLS_PER_WIN = 5;           # Number of cells displayed across each window
@@ -758,6 +761,8 @@ sub user_error($$)
     "Cannot break link - none exists",
     "Error opening file",
     "Cannot insert cells in selected dimension",
+    "Cannot delete essential cell!",
+    "Cannot delete essential dimension"
   );
 
   beep(); 
