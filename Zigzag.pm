@@ -1,4 +1,4 @@
-# Xanadu(R) Zigzag(tm) Hyperstructure Kit, $Revision: 0.67 $
+# Xanadu(R) Zigzag(tm) Hyperstructure Kit, $Revision: 0.68 $
 #
 # Designed by Ted Nelson
 # Programmed by Andrew Pam ("xanni") and Bek Oberin ("gossamer")
@@ -29,9 +29,15 @@
 # ===================== Change Log
 #
 # Inital Zigzag implementation
-# $Id: Zigzag.pm,v 0.67 1999/03/13 05:01:31 xanni Exp $
+# $Id: Zigzag.pm,v 0.68 1999/03/13 13:05:04 xanni Exp $
 #
 # $Log: Zigzag.pm,v $
+# Revision 0.68  1999/03/13 13:05:04  xanni
+# Implemented is_essential(), cell_find() and dimension_rename()
+# Implemented dimension_find() to replace dimension_exists()
+# atcursor_delete() now checks for essential cells and dimensions
+# Improved db_upgrade(), miscellaneous minor cleanup
+#
 # Revision 0.67  1999/03/13 05:01:31  xanni
 # Minor naming fixes, moved cell_create() to front-end
 # Made recycle pile a circular queue, reused oldest cell first
@@ -80,8 +86,6 @@ use Exporter;
     is_clone
     is_selected
     is_active_selected
-    dimension_is_essential
-    dimension_exists
     get_accursed
     get_active_selection
     get_selection
@@ -96,7 +100,6 @@ use Exporter;
     get_links_to
     do_shear
     cell_insert
-    cell_excise
     cell_new
     cursor_move_dimension
     cursor_jump
@@ -123,7 +126,8 @@ use Exporter;
     view_rotate
     view_flip
   );
-@EXPORT_OK = qw(link_make link_break);
+@EXPORT_OK = qw(link_make link_break is_essential cell_excise cell_find
+		dimension_find dimension_is_essential);
 
 use integer;
 use strict;
@@ -148,8 +152,8 @@ use File::Copy;
 
 # Define constants
 use vars qw($VERSION);
-#($VERSION) = q$Revision: 0.67 $ =~ /([\d\.]+)/;
-$VERSION = do { my @r = (q$Revision: 0.67 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r }; # must be all one line, for MakeMaker
+#($VERSION) = q$Revision: 0.68 $ =~ /([\d\.]+)/;
+$VERSION = do { my @r = (q$Revision: 0.68 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r }; # must be all one line, for MakeMaker
 my $FALSE = 0;
 my $TRUE = !$FALSE;
 my $CURSOR_HOME = 10;            # NOTE!  This assumes it stays fixed!
@@ -370,22 +374,36 @@ sub db_upgrade()
 # Perform any upgrades necessary to maintain backward compatibility
 # with old data files
 {
-  # Earlier than v0.50 not presently supported due to
+  # Earlier than v0.44.1.1 not presently supported due to
   # massive dimension renaming
-  die "Sorry, this data file predates Zigzag v0.50.\n"
-    unless dimension_exists("d.cursor") and dimension_exists("d.clone");
+  die "Sorry, this data file predates Zigzag v0.44.1.1.\n"
+    unless dimension_find("d.1");
+
+  # Change to current dimension names (from v0.50)
+  dimension_rename("d.Cursor", "d.cursor");
+  dimension_rename("d.Clone", "d.clone");
+  dimension_rename("d.Mark", "d.mark");
+  dimension_rename("d.Contain", "d.inside");
+  dimension_rename("d.Contain2", "d.contents");
+  dimension_rename("d.contentlist", "d.contents");
+  dimension_rename("d.contain", "d.inside");
+  dimension_rename("d.containment", "d.inside");
 
   # Make sure $SELECT_HOME exists (from v0.57)
   if (not defined $ZZ{$SELECT_HOME})
   {
     $ZZ{$SELECT_HOME} = "Selection";
     link_make($SELECT_HOME, $SELECT_HOME, "+d.2");
-    link_make($CURSOR_HOME, $SELECT_HOME, "-d.1");
+    cell_insert($SELECT_HOME, $CURSOR_HOME, "-d.1");
   }
 
+  # Rename the "Midden" to the "Recycle pile" (from v0.62)
+  $ZZ{$DELETE_HOME} = "Recycle pile" if $ZZ{$DELETE_HOME} eq "Midden";
+
   # Make sure recycle pile is a circular queue (from v0.67)
-  link_make($DELETE_HOME, get_lastcell($DELETE_HOME, "+d.2"), "-d.2")
-    unless defined $ZZ{"$DELETE_HOME-d.2"};
+  my $first = get_lastcell($DELETE_HOME, "-d.2");
+  link_make($first, get_lastcell($DELETE_HOME, "+d.2"), "-d.2")
+    unless defined $ZZ{"$first-d.2"};
 }
 
 sub db_open(;$)
@@ -477,31 +495,39 @@ sub is_active_selected($)
   return $headcell == $SELECT_HOME && $headcell != $cell;
 }
 
-
-#
-# People aren't allowed to delete essential dimensions!
-#
-sub dimension_is_essential($)
+sub is_essential($)
 {
-  my $dim = shift;
-  return ($dim =~ m/^[+-]?d\.(cursor|clone|1|2|3|inside|contents|mark)$/);
+  my $cell = shift;
+  return (($cell == 0) or ($cell == $CURSOR_HOME) or
+    ($cell == $DELETE_HOME) or ($cell == $SELECT_HOME));
 }
 
-sub dimension_exists($)
-{
-  my $dim = shift;
-  my $dhome = $ZZ{"$CURSOR_HOME+d.1"};
-  my $cell = $dhome;
-  my $found = $FALSE;
 
-  # Follow links until we find a match or return to where we started
-  do
+sub dimension_is_essential($)
+{
+  return $_[0] =~ /^[+-]?d\.(1|2|cursor|clone|inside|contents|mark)$/;
+}
+
+sub dimension_find($)
+{
+  return cell_find($ZZ{"$CURSOR_HOME+d.1"}, "+d.2", $_[0]);
+}
+
+sub dimension_rename($$)
+# Rename an entire dimension.  Warning - traverses entire data file!
+{
+  my ($d_orig, $d_new) = @_;
+  my $cell = dimension_find($d_orig);
+
+  if ($cell and not dimension_find($d_new))
   {
-    $cell = $ZZ{"$cell+d.2"};
-    die "Dimension list broken" unless defined $cell;
-    $found = $ZZ{$cell} =~ /^$dim$/;
-  } until $found or ($cell == $dhome);
-  return $found;
+    print STDERR "Renaming dimension $d_orig to $d_new.  Please wait...";
+    $ZZ{$cell} = $d_new;
+
+    while (my ($key, $value) = each %ZZ)
+    { $key =~ s/$d_orig$/$d_new/; }
+    print STDERR "done.\n";
+  }
 }
 
 
@@ -544,14 +570,14 @@ sub get_which_selection($)
 }
 
 sub get_lastcell($$)
-# Find the last cell along a given dimension
+# Find the last cell in a given direction
 {
-  my ($cell, $dim) = @_;
+  my ($cell, $dir) = @_;
   die "No cell $cell" unless defined($ZZ{"$cell"});
-  die "Invalid direction $dim" unless ($dim =~ /^[+-]/);
+  die "Invalid direction $dir" unless ($dir =~ /^[+-]/);
 
   # Follow links to the end or until we return to where we started
-  $cell = $_ while defined($_ = $ZZ{"$cell$dim"}) && ($_ != $_[0]);
+  $cell = $_ while defined($_ = $ZZ{"$cell$dir"}) && ($_ != $_[0]);
   return $cell;
 }
 
@@ -818,45 +844,45 @@ sub do_shear($$$;$$)
 # Named link_*
 #
 sub link_break($$;$)
-# Break a link between two cells in a given dimension.
+# Break a link between two cells in a given direction.
 # This should be the only way links are ever broken to ensure consistency.
 # Second argument is optional.  If present, it must be linked from cell 1
 # in the approprate dimension.
 {
-  my ($cell1, $cell2, $dim);
+  my ($cell1, $cell2, $dir);
   if (@_ == 3)
   {
-    ($cell1, $cell2, $dim) = @_;
-    die "$cell1 is not linked to $cell2 in dimension $dim"
-      unless $cell2 == $ZZ{"$cell1$dim"};
+    ($cell1, $cell2, $dir) = @_;
+    die "$cell1 is not linked to $cell2 in direction $dir"
+      unless $cell2 == $ZZ{"$cell1$dir"};
   }
   else
   {
-    ($cell1, $dim) = @_;
-    $cell2 = $ZZ{"$cell1$dim"}; # Infer second argument
+    ($cell1, $dir) = @_;
+    $cell2 = $ZZ{"$cell1$dir"}; # Infer second argument
   }
 
   die "No cell $cell1" unless defined $ZZ{"$cell1"};
   die "No cell $cell2" unless defined $ZZ{"$cell2"};
-  die "Invalid direction $dim" unless ($dim =~ /^[+-]/);
+  die "Invalid direction $dir" unless ($dir =~ /^[+-]/);
 
-  delete($ZZ{"$cell1$dim"});
-  delete($ZZ{$cell2 . reverse_sign($dim)});
+  delete($ZZ{"$cell1$dir"});
+  delete($ZZ{$cell2 . reverse_sign($dir)});
 }
 
 sub link_make($$$)
-# Make a link between two cells in a given dimension.
+# Make a link between two cells in a given direction.
 # This should be the only way links are ever made to ensure consistency.
 {
-  my ($cell1, $cell2, $dim) = @_;
+  my ($cell1, $cell2, $dir) = @_;
   die "No cell $cell1" unless defined($ZZ{"$cell1"});
   die "No cell $cell2" unless defined($ZZ{"$cell2"});
-  die "Invalid direction $dim" unless ($dim =~ /^[+-]/);
-  my $back = reverse_sign($dim);
-  die "$cell1 already linked" if defined($ZZ{"$cell1$dim"});
+  die "Invalid direction $dir" unless ($dir =~ /^[+-]/);
+  my $back = reverse_sign($dir);
+  die "$cell1 already linked" if defined($ZZ{"$cell1$dir"});
   die "$cell2 already linked" if defined($ZZ{"$cell2$back"});
 
-  $ZZ{"$cell1$dim"} = $cell2;
+  $ZZ{"$cell1$dir"} = $cell2;
   $ZZ{"$cell2$back"} = $cell1;
 }
 
@@ -866,34 +892,49 @@ sub link_make($$$)
 # Named cell_*
 #
 sub cell_insert($$$)
-# Insert a cell next to another cell along a given dimension
+# Insert a cell next to another cell in a given direction
 #
 #           Original state                             New state
 #           --------------                           -------------
 #           $cell1---next
 #           $cell2---$cell3                $cell2---$cell1---($cell3 or next)
 {
-  my ($cell1, $cell2, $dim) = @_;
+  my ($cell1, $cell2, $dir) = @_;
   die "No cell $cell1" unless defined($ZZ{"$cell1"});
   die "No cell $cell2" unless defined($ZZ{"$cell2"});
-  die "Invalid direction $dim" unless ($dim =~ /^[+-]/);
-  my $cell3 = $ZZ{"$cell2$dim"};
+  die "Invalid direction $dir" unless ($dir =~ /^[+-]/);
+  my $cell3 = $ZZ{"$cell2$dir"};
 
   # Can't insert if $cell1 has inappropriate neighbours
-  if (defined($ZZ{$cell1 . reverse_sign($dim)}) ||
-      ((defined($ZZ{"$cell1$dim"}) && defined($cell3))))
-  { 
-     user_error(2, "$cell1 $dim $cell2"); 
-  }
+  if (defined($ZZ{$cell1 . reverse_sign($dir)}) ||
+      ((defined($ZZ{"$cell1$dir"}) && defined($cell3))))
+  { user_error(2, "$cell1 $dir $cell2"); }
   else
   {
     if (defined($cell3))
     {
-       link_break($cell2, $cell3, $dim);
-       link_make($cell1, $cell3, $dim);
+      link_break($cell2, $cell3, $dir);
+      link_make($cell1, $cell3, $dir);
     }
-    link_make($cell2, $cell1, $dim);
+    link_make($cell2, $cell1, $dir);
   }
+}
+
+sub cell_find($$$)
+# From a starting cell, travel a given direction to find given cell contents
+{
+  my ($start, $dir, $contents) = @_;
+  die "Invalid direction $dir" unless ($dir =~ /^[+-]/);
+  my $cell = $start;
+  my $found = $FALSE;
+
+  # Follow links until we find a match or return to where we started
+  do
+  {
+    $found = $cell if (defined $cell) and ($ZZ{$cell} eq $contents);
+    $cell = $ZZ{"$cell$dir"};
+  } until $found or (not defined $cell) or ($cell == $start);
+  return $found;
 }
 
 sub cell_excise($$)
@@ -929,7 +970,7 @@ sub cell_new(;$)
 # Named cursor_*
 #
 sub cursor_move_dimension($$)
-# Move cursor along a given dimension
+# Move cursor in a given direction
 #
 #                 Original state                 New state
 #                 --------------               -------------
@@ -945,12 +986,12 @@ sub cursor_move_dimension($$)
 # cursor next to "new", but Ted prefers the visualisation that the most
 # recent cursor is the one furthest along the cursor dimension.
 {
-  my ($curs, $dim) = @_;
-  die "Invalid direction $dim" unless ($dim =~ /^[+-]/);
+  my ($curs, $dir) = @_;
+  die "Invalid direction $dir" unless ($dir =~ /^[+-]/);
   my $cell = get_lastcell($curs, "-d.cursor");
 
   # Don't bother if there's nowhere to go
-  return if (!defined($_ = $ZZ{"$cell$dim"}) ||
+  return if (!defined($_ = $ZZ{"$cell$dir"}) ||
              ($_ == $cell) || defined $ZZ{"$_-d.cursor"});
 
   # Now move the cursor
@@ -1159,42 +1200,55 @@ sub atcursor_delete($)
 {
   my $curs = get_cursor($_[0]);
   my $cell = get_lastcell($curs, "-d.cursor");
-  my $index = $ZZ{"$CURSOR_HOME+d.1"}; # Dimension list is +d.1 from Cursor home
+  my $dhome = $ZZ{"$CURSOR_HOME+d.1"}; # Dimension list is +d.1 from Cursor home
+  my $index = $dhome;
   my $neighbour;
 
-  # Pass the torch if this cell has clone(s)
-  if (!defined $ZZ{"$cell-d.clone"} && ($_ = $ZZ{"$cell+d.clone"}))
-  { $ZZ{$_} = $ZZ{$cell}; }
-
-  do
+  if (is_essential($cell))
   {
-    my $dim = $ZZ{$index};
-    # Try and find any valid non-cursor neighbour
-    $neighbour = $_ unless defined $neighbour
-      || ((!defined($_ = $ZZ{"$cell-$dim"})
-          || ($_ eq $cell)
-          || defined $ZZ{"$_-d.cursor"})
-        && (!defined($_ = $ZZ{"$cell+$dim"})
-          || ($_ eq $cell)
-          || defined $ZZ{"$_-d.cursor"}));
+    user_error(10);
+  }
+  elsif ((cell_find($cell, "-d.2", $ZZ{$dhome}) == $dhome) and
+    dimension_is_essential($ZZ{$cell}))
+  {
+    user_error(11, $ZZ{$cell})
+  }
+  else
+  {
+    # Pass the torch if this cell has clone(s)
+    if (!defined $ZZ{"$cell-d.clone"} && ($_ = $ZZ{"$cell+d.clone"}))
+    { $ZZ{$_} = $ZZ{$cell}; }
+  
+    do
+    {
+      my $dim = $ZZ{$index};
+      # Try and find any valid non-cursor neighbour
+      $neighbour = $_ unless defined $neighbour
+        || ((!defined($_ = $ZZ{"$cell-$dim"})
+            || ($_ eq $cell)
+            || defined $ZZ{"$_-d.cursor"})
+          && (!defined($_ = $ZZ{"$cell+$dim"})
+            || ($_ eq $cell)
+            || defined $ZZ{"$_-d.cursor"}));
+  
+      # Excise $cell from dimension $dim
+      cell_excise($cell, $dim);
+  
+      # Proceed to the next dimension
+      $index = $ZZ{"$index+d.2"};
+      die "Dimension list broken" unless defined $index;
+    } until ($index == $dhome);
+    $neighbour = 0 unless defined $neighbour;
+  
+    # Move $cell to the recycle pile
+    cell_insert($cell, $DELETE_HOME, "+d.2");
+  
+    # Move the cursor to any $neighbour or home if none
+    $cell = get_lastcell($neighbour, "+d.cursor");
+    cell_insert($curs, $cell, "+d.cursor");
 
-    # Excise $cell from dimension $dim
-    cell_excise($cell, $dim);
-
-    # Proceed to the next dimension
-    $index = $ZZ{"$index+d.2"};
-    die "Dimension list broken" unless defined $index;
-  } until ($index == $ZZ{"$CURSOR_HOME+d.1"});
-  $neighbour = 0 unless defined $neighbour;
-
-  # Move $cell to the recycle pile
-  cell_insert($cell, $DELETE_HOME, "+d.2");
-
-  # Move the cursor to any $neighbour or home if none
-  $cell = get_lastcell($neighbour, "+d.cursor");
-  cell_insert($curs, $cell, "+d.cursor");
-
-  display_dirty();
+    display_dirty();
+  }
 }
 
 sub atcursor_hop(@)
@@ -1518,16 +1572,8 @@ sub view_rotate($$)
   $curs = $ZZ{"$curs+d.1"} if $axis ne "X";
   $curs = $ZZ{"$curs+d.1"} if $axis eq "Z";
   my $dim = substr($ZZ{$curs}, 1);
-  my $index = $ZZ{"$CURSOR_HOME+d.1"}; # Dimension list is +d.1 from Cursor home
-
-  # Find the current dimension
-  while ($ZZ{$index} ne $dim)
-  {
-    $index = $ZZ{"$index+d.2"};
-    die "Dimension list broken" unless defined $index;
-    die "Dimension $dim not found" if ($index == $ZZ{"$CURSOR_HOME+d.1"});
-  }
-
+  my $index = cell_find($ZZ{"$CURSOR_HOME+d.1"}, "+d.2", $dim);
+  die "Dimension $dim not found" unless $index;
   $ZZ{$curs} = substr($ZZ{$curs}, 0, 1) . $ZZ{$ZZ{"$index+d.2"}};
   display_dirty();
 }
