@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-# Xanadu(R) DIMENSIA(tm) Hyperstructure Kit, $Revision: 0.57 $
+# Xanadu(R) DIMENSIA(tm) Hyperstructure Kit, $Revision: 0.58 $
 #
 # Designed by Ted Nelson
 # Programmed by Andrew Pam ("xanni") and Bek Oberin ("gossamer")
@@ -25,16 +25,20 @@
 # ===================== Change Log
 #
 # Inital zigzag implementation
-# $Id: zigzag,v 0.57 1998/11/18 14:21:34 xanni Exp $
+# $Id: zigzag,v 0.58 1998/11/21 02:59:23 xanni Exp $
 #
 # $Log: zigzag,v $
+# Revision 0.58  1998/11/21 02:59:23  xanni
+# Renamed UI toolkit specific functions to start with display_
+# Minor updates to status bar code (defined $STATUS_DELAY, moved
+# $StatusTimer setting into display_status_draw function)
+#
 # Revision 0.57  1998/11/18 14:21:34  xanni
-# Incorporated megapatch from Mark-Jason Dominus which implements
-# multiple selections and the shear operation.  Replaced atrocious
-# get_links_from() function with new get_links_to() function plus
-# substantial miscellaneous cleanup (formatting, spelling, docs and code).
-# Renamed cells_import() and cells_export() functions to atcursor_import()
-# and atcursor_export() respectively.
+# Incorporated megapatch from Mark-Jason Dominus which implements multiple
+# selections and the shear operation.  Replaced atrocious get_links_from()
+# with get_links_to() plus substantial miscellaneous cleanup (formatting,
+# spelling, docs and code).  Renamed cells_import() and cells_export() to
+# atcursor_import() and atcursor_export() respectively.
 #
 # Revision 0.56  1998/11/18 09:16:42  xanni
 # Changed function call syntax (removed ampersands) and incorporated
@@ -94,8 +98,8 @@ use File::Copy qw(copy);
 # Use the $TRUE and $FALSE constants instead of "1" and "0"
 
 # Define constants
-#my ($VERSION) = q$Revision: 0.57 $ =~ /([\d\.]+)/;
-my $VERSION = q$Id: zigzag,v 0.57 1998/11/18 14:21:34 xanni Exp $;
+#my ($VERSION) = q$Revision: 0.58 $ =~ /([\d\.]+)/;
+my $VERSION = q$Id: zigzag,v 0.58 1998/11/21 02:59:23 xanni Exp $;
 my $FALSE = 0;
 my $TRUE = !$FALSE;
 my $CELLS_PER_WIN = 5;           # Number of cells displayed across each window
@@ -107,6 +111,7 @@ my $FILENAME = "zigzag.zz";      # Default filename for initial slice
 my $TEMP_FILE = "/tmp/zigzag-$<-$^T"; # Filename used for external editing
 my $LOTS_OF_COLOURS = $TRUE;     # What style
 my $USE_STATUSBAR = $TRUE;       # Are we using the status bar?
+my $STATUS_DELAY = 20;		 # Tenths of a second to display status info
 my $ZZMAIL_SUPPORT = $FALSE;	 # Enable preliminary ZZmail support
 my $COMMAND_SYNC_COUNT = 20;     # Sync the DB after this many commands
 my $BACKUP_FILE_SUFFIX = ".bak";
@@ -202,9 +207,9 @@ my %Keymap =
     meta_key("t")	=> 'atcursor_copy(1);',
     "V"			=> 'view_raster_toggle(0);',
     "v"			=> 'view_raster_toggle(1);',
-    "\cV"		=> 'status_draw(version()); $StatusTimer = 20;',
-    meta_key("V")	=> 'status_draw(version()); $StatusTimer = 20;',
-    meta_key("v")	=> 'status_draw(version()); $StatusTimer = 20;',
+    "\cV"		=> 'display_status_draw(version());',
+    meta_key("V")	=> 'display_status_draw(version());',
+    meta_key("v")	=> 'display_status_draw(version());',
     "X"			=> 'view_rotate(0, "X");',
     "x"			=> 'view_rotate(1, "X");',
     "\cX"		=> '$ZigZag_Terminated = "^X";',
@@ -1108,12 +1113,12 @@ sub atcursor_select($)
   # Otherwise add it to the active selection and deliver a message.
   if ($already_selected && $which_selection == $SELECT_HOME)
   {
-    status_draw("Deselected cell $cell");      
+    display_status_draw("Deselected cell $cell");      
   }
   else
   {    
     cell_insert($cell, $SELECT_HOME, "+d.mark");
-    status_draw("Selected cell $cell");
+    display_status_draw("Selected cell $cell");
   }
   #cursor_move_dimension($curs, "+d.mark");
 
@@ -1460,8 +1465,10 @@ sub cells_row($$)
   @result;
 }
 
+
 #
-# Functions that operate on the whole screen
+# Functions that are implemented using a particular user interface toolkit
+# (Currently curses)
 # Named: display_*
 #
 sub display_open()
@@ -1543,6 +1550,85 @@ sub display_resize()
   display_open();
   $Display_Resized = $FALSE;
 }
+
+sub display_status_draw($)
+# Actually draw the status bar, if enabled
+{
+  return unless $USE_STATUSBAR;
+  erase($Status);
+  attrset($Status, $Display_Has_Colour ? COLOR_PAIR(3) : A_REVERSE);
+  if ($_[0])
+  {
+    addstr($Status, 0, 0, $_[0]);
+    $StatusTimer = $STATUS_DELAY;
+  }
+  addstr($Status, 0, $COLS - 10, $Input_Buffer) if defined($Input_Buffer);
+  display_refresh($Status);
+  $Status_Dirty = $FALSE;
+}
+
+sub display_monospace($$)
+# Helper function to trim or space-pad text to a given width
+# Only needed for user interfaces with monospaced fonts
+{
+  my ($contents, $width) = @_;
+  if (!defined $contents || ($contents eq ""))
+  {
+     $_ = " " x $width;
+  }
+  else
+  {
+    $contents =~ tr/\t/ /;        # Tab compression
+    my $len = length($contents);
+
+    # Trim and/or pad with trailing spaces as necessary
+    if ($len == $width)
+    { $_ = $contents; }
+    elsif ($len > $width)
+    { $_ = substr($contents, 0, $width); }
+    else # $len < $width
+    { $_ = substr($contents, 0, $len) . " " x ($width - $len); }
+  }
+}
+
+sub display_draw_cell($$$$)
+# Draw cell at row and column
+{
+  my ($win, $cell, $row, $col) = @_;
+  my $cursor = $ZZ{"$cell+d.cursor"} unless defined $ZZ{"$cell-d.cursor"};
+  my $number = -1;
+  my $content;
+
+  while (defined $cursor)
+  { $cursor = $ZZ{"$cursor-d.2"};  $number++; }
+  ($content) = split(/\n/, get_cell_contents($cell));	# Just the first line
+
+  # Clone cells get a special colour in high-colour mode
+  attron($win, COLOR_PAIR(2) | A_BOLD) 
+    if $LOTS_OF_COLOURS && is_clone($cell);
+  # Ditto selected cells
+  attron($win, COLOR_PAIR(3) | A_BOLD) 
+    if $LOTS_OF_COLOURS && is_selected($cell);
+
+  # Colour/highlight the cursors
+  attron($win, $Display_Has_Colour ? COLOR_PAIR(6) : A_UNDERLINE) if $number == 1;
+  attron($win, $Display_Has_Colour ? COLOR_PAIR(7) : A_REVERSE) if $number > 1;
+  addnstr($win, $row, $col,
+          display_monospace($content, $Cursor_Len - 1), $Cursor_Len - 1);
+  # End colour/highlight
+  attrset($win, A_NORMAL);
+}
+
+sub display_draw_quad($$$$$)
+# Draw given part of a quad cell starting at row and column
+{
+  my ($win, $contents, $row, $col, $width) = @_;
+
+  attrset($win, A_REVERSE);
+  addnstr($win, $row, $col, display_monospace($contents, $width), $width);
+  attrset($win, A_NORMAL);
+}
+
 
 #
 # Functions that draw things in a given window.  The windows are a
@@ -1636,11 +1722,11 @@ sub window_draw_Iraster($$$$$$$$)
     until (($#_ < 0) || (length($contents) >= $width * $row));
     $_ = wordbreak($contents, $width);
     $contents = substr($contents, length);
-    window_draw_cell_contents_wide($win, $_, $row, $col, $width);
+    display_draw_quad($win, $_, $row, $col, $width);
   }
   else
   {
-    window_draw_cell($win, $cell, $row, $col);
+    display_draw_cell($win, $cell, $row, $col);
     window_draw_cells_horizontal($win, $cell, $row, $col, $right, 1);
   }
 
@@ -1656,7 +1742,7 @@ sub window_draw_Iraster($$$$$$$$)
     if (defined $i && defined ($i = $ZZ{"$i$up"}))
     {
       addch($win, $row - $y * 2 + 1, $col + int($Cursor_Len / 2), ACS_VLINE);
-      window_draw_cell($win, $i, $row - $y * 2, $col);
+      display_draw_cell($win, $i, $row - $y * 2, $col);
       window_draw_cells_horizontal($win, $i, $row - $y * 2, $col, $left, -1);
       window_draw_cells_horizontal($win, $i, $row - $y * 2, $col, $right, 1);
     }
@@ -1667,7 +1753,7 @@ sub window_draw_Iraster($$$$$$$$)
       if (!$quad)
       {
         addch($win, $row + $y * 2 - 1, $col + int($Cursor_Len / 2), ACS_VLINE);
-        window_draw_cell($win, $j, $row + $y * 2, $col);
+        display_draw_cell($win, $j, $row + $y * 2, $col);
         window_draw_cells_horizontal($win, $j, $row + $y * 2, $col, $right, 1);
       }
       window_draw_cells_horizontal($win, $j, $row + $y * 2, $col, $left, -1);
@@ -1681,7 +1767,7 @@ sub window_draw_Iraster($$$$$$$$)
     {
       $_ = wordbreak($contents, $width);
       $contents = substr($contents, length);
-      window_draw_cell_contents_wide($win, $_, $row + $y, $col, $width);
+      display_draw_quad($win, $_, $row + $y, $col, $width);
     }
   }
 }
@@ -1705,11 +1791,11 @@ sub window_draw_Hraster($$$$$$$$)
     until (($#_ < 0) || (length($contents) >= $width * $row));
     $_ = wordbreak($contents, $width);
     $contents = substr($contents, length);
-    window_draw_cell_contents_wide($win, $_, $row, $col, $width);
+    display_draw_quad($win, $_, $row, $col, $width);
   }
   else
   {
-    window_draw_cell($win, $cell, $row, $col);
+    display_draw_cell($win, $cell, $row, $col);
     window_draw_cells_vertical($win, $cell, $row, $col, $down, 1);
   }
 
@@ -1724,7 +1810,7 @@ sub window_draw_Hraster($$$$$$$$)
     if (defined $i && defined ($i = $ZZ{"$i$left"}))
     {
       addch($win, $row, $col - ($x - 1) * $Cursor_Len - 1, ACS_HLINE);
-      window_draw_cell($win, $i, $row, $col - $x * $Cursor_Len);
+      display_draw_cell($win, $i, $row, $col - $x * $Cursor_Len);
       window_draw_cells_vertical($win, $i, $row, $col - $x * $Cursor_Len, $up, -1);
       window_draw_cells_vertical($win, $i, $row, $col - $x * $Cursor_Len, $down, 1);
     }
@@ -1735,7 +1821,7 @@ sub window_draw_Hraster($$$$$$$$)
       if (!$quad)
       {
         addch($win, $row, $col + $x * $Cursor_Len - 1, ACS_HLINE);
-        window_draw_cell($win, $j, $row, $col + $x * $Cursor_Len);
+        display_draw_cell($win, $j, $row, $col + $x * $Cursor_Len);
         window_draw_cells_vertical($win, $j, $row, $col + $x * $Cursor_Len, $down, 1);
       }
       window_draw_cells_vertical($win, $j, $row, $col + $x * $Cursor_Len, $up, -1);
@@ -1749,7 +1835,7 @@ sub window_draw_Hraster($$$$$$$$)
     {
       $_ = wordbreak($contents, $width);
       $contents = substr($contents, length);
-      window_draw_cell_contents_wide($win, $_, $row + $j, $col, $width);
+      display_draw_quad($win, $_, $row + $j, $col, $width);
     }
   }
 }
@@ -1769,7 +1855,7 @@ sub window_draw_cells_horizontal($$$$$$)
     if (defined ($cell = $ZZ{"$cell$dim"}))
     {
       addch($win, $row, $col + $ofs, ACS_HLINE);
-      window_draw_cell($win, $cell, $row, $col += $inc);
+      display_draw_cell($win, $cell, $row, $col += $inc);
     }
   }
 }
@@ -1787,89 +1873,9 @@ sub window_draw_cells_vertical($$$$$$)
     if (defined ($cell = $ZZ{"$cell$dim"}))
     {
       addch($win, $row += $sign, $col + int($Cursor_Len / 2), ACS_VLINE);
-      window_draw_cell($win, $cell, $row += $sign, $col);
+      display_draw_cell($win, $cell, $row += $sign, $col);
     }
   }
-}
-
-sub window_draw_cell($$$$)
-# Draw cell at row and column
-{
-  my ($win, $cell, $row, $col) = @_;
-  my $cursor = $ZZ{"$cell+d.cursor"} unless defined $ZZ{"$cell-d.cursor"};
-  my $number = -1;
-  my $content;
-
-  while (defined $cursor)
-  { $cursor = $ZZ{"$cursor-d.2"};  $number++; }
-  ($content) = split(/\n/, get_cell_contents($cell));	# Just the first line
-
-  # Clone cells get a special colour in high-colour mode
-  attron($win, COLOR_PAIR(2) | A_BOLD) 
-    if $LOTS_OF_COLOURS && is_clone($cell);
-  # Ditto selected cells
-  attron($win, COLOR_PAIR(3) | A_BOLD) 
-    if $LOTS_OF_COLOURS && is_selected($cell);
-
-  # Colour/highlight the cursors
-  attron($win, $Display_Has_Colour ? COLOR_PAIR(6) : A_UNDERLINE) if $number == 1;
-  attron($win, $Display_Has_Colour ? COLOR_PAIR(7) : A_REVERSE) if $number > 1;
-  addnstr($win, $row, $col,
-          window_draw_cell_contents($content, $Cursor_Len - 1), $Cursor_Len - 1);
-  # End colour/highlight
-  attrset($win, A_NORMAL);
-}
-
-sub window_draw_cell_contents($$)
-# Return visualisation of one line of a cell space-padded to a given width
-{
-  my ($contents, $width) = @_;
-  if (!defined $contents || ($contents eq ""))
-  {
-     $_ = " " x $width;
-  }
-  else
-  {
-    $contents =~ tr/\t/ /;        # Tab compression
-    my $len = length($contents);
-
-    # Trim and/or pad with trailing spaces as necessary
-    if ($len == $width)
-    { $_ = $contents; }
-    elsif ($len > $width)
-    { $_ = substr($contents, 0, $width); }
-    else # $len < $width
-    { $_ = substr($contents, 0, $len) . " " x ($width - $len); }
-  }
-}
-
-sub window_draw_cell_contents_wide($$$$$)
-# Draw wide cell showing given contents starting at row and column
-{
-  my ($win, $contents, $row, $col, $width) = @_;
-
-  attrset($win, A_REVERSE);
-  addnstr($win, $row, $col, window_draw_cell_contents($contents, $width), $width);
-  attrset($win, A_NORMAL);
-}
-
-#
-# Status bar functions.
-# Named: status_*
-#
-sub status_draw($)
-{
-  my $text = shift;
- 
-  if ($USE_STATUSBAR)
-  {
-    erase($Status);
-    attrset($Status, $Display_Has_Colour ? COLOR_PAIR(3) : A_REVERSE);
-    addstr($Status, 0, 0, $text) if $text;
-    addstr($Status, 0, $COLS - 10, $Input_Buffer) if defined($Input_Buffer);
-    display_refresh($Status);
-  }
-  $Status_Dirty = $FALSE;
 }
 
 #
@@ -2054,12 +2060,12 @@ sub user_error($$)
   if ($errno and $USE_STATUSBAR)
   {
     $errno--;
-    my $errmsg = "Error $errno: " . $errors[$errno] if $errno <= $#errors;
+    my $errmsg = "Error $errno";
+    $errmsg .= ": $errors[$errno]" if $errno <= $#errors;
     if ($text)
-    { status_draw(substr("$errmsg ($text)", 0, $COLS)); }
+    { display_status_draw(substr("$errmsg ($text)", 0, $COLS)); }
     else
-    { status_draw(substr("$errmsg", 0, $COLS)); }
-    $StatusTimer = 20;
+    { display_status_draw(substr("$errmsg", 0, $COLS)); }
   }
 
   if ($USE_STATUSBAR)
@@ -2105,7 +2111,7 @@ sub idle()
   {
     $StatusTimer--;
     if (!$StatusTimer)
-    { status_draw(NULL); }
+    { display_status_draw(NULL); }
   }
 }
 
@@ -2145,8 +2151,8 @@ eval
   if ($Status_Dirty)
   {
     if ($USE_STATUSBAR)
-    { status_draw(NULL); }
-    else
+    { display_status_draw(NULL); }
+    else # Status information is in $Window[0] instead
     { $Window_Dirty[0] = $TRUE; $Status_Dirty = $FALSE; }
   }
 
