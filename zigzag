@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-# Xanadu(R) DIMENSIA(tm) Hyperstructure Kit, $Revision: 0.63 $
+# Xanadu(R) ZigZag(tm) Hyperstructure Kit, $Revision: 0.64 $
 #
 # Designed by Ted Nelson
 # Programmed by Andrew Pam ("xanni") and Bek Oberin ("gossamer")
@@ -25,9 +25,12 @@
 # ===================== Change Log
 #
 # Inital zigzag implementation
-# $Id: zigzag,v 0.63 1999/01/06 05:07:14 xanni Exp $
+# $Id: zigzag,v 0.64 1999/01/07 03:55:11 xanni Exp $
 #
 # $Log: zigzag,v $
+# Revision 0.64  1999/01/07 03:55:11  xanni
+# Minor cosmetic changes
+#
 # Revision 0.63  1999/01/06 05:07:14  xanni
 # Created display_dirty() and generally fixed up dirty handling
 # Minor cleanup of error handling and Meta support
@@ -42,56 +45,6 @@
 #
 # Revision 0.60  1998/11/21 08:24:21  xanni
 # Introduced window_draw_preview, cleaned up display_draw_quad
-#
-# Revision 0.59  1998/11/21 05:36:19  xanni
-# Separated curses-specific globals, renamed $Cursor_Len to $Cell_Width,
-# created $Window_Xcentre and $Window_Ycentre, modified all row and
-# column parameters to be (UI-toolkit independent) grid rows and columns
-# instead of character-cell positions.
-#
-# Revision 0.58  1998/11/21 02:59:23  xanni
-# Renamed UI toolkit specific functions to start with display_
-# Minor updates to status bar code (defined $STATUS_DELAY, moved
-# $StatusTimer setting into display_status_draw function)
-#
-# Revision 0.57  1998/11/18 14:21:34  xanni
-# Incorporated megapatch from Mark-Jason Dominus which implements multiple
-# selections and the shear operation.  Replaced atrocious get_links_from()
-# with get_links_to() plus substantial miscellaneous cleanup (formatting,
-# spelling, docs and code).  Renamed cells_import() and cells_export() to
-# atcursor_import() and atcursor_export() respectively.
-#
-# Revision 0.56  1998/11/18 09:16:42  xanni
-# Changed function call syntax (removed ampersands) and incorporated
-# bug fixes from Mark-Jason Dominus <mjd@plover.com>
-#
-# Revision 0.55  1998/10/26 05:37:32  xanni
-# Changed default file extension and incorporated $EDITOR selection patch
-# from Mark-Jason Dominus <mjd@plover.com>
-#
-# Revision 0.54  1998/10/08 03:56:21  xanni
-# Incorporated Gossamer's changes, fixed $TEMP_FILE problem
-#
-# Revision 0.53.0.1  1998/09/07 11:05:54  gossamer
-# Added 'm' to show marked cells, like 'c' for clone
-# Added status bar update when marking cells
-# Added dimension_exists() and dimension_is_essential()
-#
-# Revision 0.53  1998/08/31 22:17:33  xanni
-# Code cleanup, implemented view_reset()
-#
-# Revision 0.52  1998/08/29 19:19:43  xanni
-# Fixed status line bugs
-#
-# Revision 0.51  1998/08/28 21:57:18  xanni
-# Various minor bugfixes and additions:
-# - Fixed File::Copy problem and reinstated backup
-# - Fixed version() and atcursor_mark()
-# - Added uppercase movement keys, redraw and exit keys
-# - Added new menu cells for clone, quad view toggle, rotate and flip
-#
-# Revision 0.50  1998/08/19 21:40:43  xanni
-# Temporarily disabled backup due to problems with File::Copy module
 #
 # Older revisions are listed in the CHANGES file
 #
@@ -119,8 +72,8 @@ use File::Copy qw(copy);
 # Use the $TRUE and $FALSE constants instead of "1" and "0"
 
 # Define constants
-#my ($VERSION) = q$Revision: 0.63 $ =~ /([\d\.]+)/;
-my $VERSION = q$Id: zigzag,v 0.63 1999/01/06 05:07:14 xanni Exp $;
+#my ($VERSION) = q$Revision: 0.64 $ =~ /([\d\.]+)/;
+my $VERSION = q$Id: zigzag,v 0.64 1999/01/07 03:55:11 xanni Exp $;
 my $FALSE = 0;
 my $TRUE = !$FALSE;
 my $CELLS_PER_WIN = 5;           # Number of cells displayed across each window
@@ -138,7 +91,7 @@ my $COMMAND_SYNC_COUNT = 20;     # Sync the DB after this many commands
 my $BACKUP_FILE_SUFFIX = ".bak";
 
 # Declare globals
-my %ZZ;                          # The Zigzag cells and links
+my %ZZ;                          # The ZigZag cells and links
 my $StatusTimer;                 # Times messages' duration on the status bar
 my @Window_Dirty;                # Flags to indicate windows need redrawing
 my $Status_Dirty;                # Flags to indicate status bar needs redrawing
@@ -1153,6 +1106,7 @@ sub rotate_selection ()
 #  my $num_selections = cells_row($SELECT_HOME, "+d.2");
   
   do_shear($SELECT_HOME, '-d.2', '+d.mark', $shear_count);
+  undef $Input_Buffer;
 }
 
 sub push_selection()
