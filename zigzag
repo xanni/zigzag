@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-# Xanadu(R) DIMENSIA(tm) Hyperstructure Kit, $Revision: 0.51 $
+# Xanadu(R) DIMENSIA(tm) Hyperstructure Kit, $Revision: 0.52 $
 #
 # Designed by Ted Nelson
 # Programmed by Andrew Pam ("xanni") and Bek Oberin ("gossamer")
@@ -25,9 +25,12 @@
 # ===================== Change Log
 #
 # Inital zigzag implementation
-# $Id: zigzag,v 0.51 1998/08/28 21:57:18 xanni Exp $
+# $Id: zigzag,v 0.52 1998/08/29 19:19:43 xanni Exp $
 #
 # $Log: zigzag,v $
+# Revision 0.52  1998/08/29 19:19:43  xanni
+# Fixed status line bugs
+#
 # Revision 0.51  1998/08/28 21:57:18  xanni
 # Various minor bugfixes and additions:
 # - Fixed File::Copy problem and reinstated backup
@@ -59,8 +62,8 @@ use File::Copy qw(copy);
 # Put brackets around all function arguments.
 
 # Define constants
-#my ($VERSION) = q$Revision: 0.51 $ =~ /([\d\.]+)/;
-my $VERSION = q$Id: zigzag,v 0.51 1998/08/28 21:57:18 xanni Exp $;
+#my ($VERSION) = q$Revision: 0.52 $ =~ /([\d\.]+)/;
+my $VERSION = q$Id: zigzag,v 0.52 1998/08/29 19:19:43 xanni Exp $;
 my $FALSE = 0;
 my $TRUE = not $FALSE;
 my $CELLS_PER_WIN = 5;           # Number of cells displayed across each window
@@ -1537,13 +1540,11 @@ sub status_draw($)
    {
       erase($Status);
       attrset($Status, $Display_Has_Colour ? COLOR_PAIR(3) : A_REVERSE);
-      #$text .=  " " x ($COLS - 10 - length($text)) .  $Input_Buffer if defined($Input_Buffer);
       addstr($Status, 0, 0, $text) if $text;
       addstr($Status, 0, $COLS - 10, $Input_Buffer) if defined($Input_Buffer);
-
       &display_refresh($Status);
    }
-   #$Status_Dirty = $FALSE;  # XXX why doesn't that work?
+   $Status_Dirty = $FALSE;
 }
 
 #
@@ -1659,7 +1660,7 @@ sub input_process_digit($)
   elsif ($Input_Buffer < 1000000000)
   { $Input_Buffer = $Input_Buffer * 10 + $_[0];  $Status_Dirty = $TRUE; }
   else
-  { beep(); &display_refresh($Status); }
+  { beep(); &display_refresh($Status) if $USE_STATUSBAR; }
 }
 
 sub input_process_backspace()
@@ -1672,10 +1673,10 @@ sub input_process_backspace()
     { $Input_Buffer /= 10; }
     else # Otherwise remove the only digit
     { undef $Input_Buffer; }
-    $Window_Dirty[0] = $TRUE;
+    $Status_Dirty = $TRUE;
   }
   else
-  { beep(); &display_refresh($Status); }
+  { beep(); &display_refresh($Status) if $USE_STATUSBAR; }
 }
 
 #
@@ -1725,6 +1726,8 @@ sub user_error($$)
       &display_refresh($Status);
       $StatusTimer = 20;
    }
+   else
+   { &display_refresh(); }
 }
 
 
@@ -1734,15 +1737,11 @@ sub user_error($$)
 sub idle()
 {
   select(undef, undef, undef, 0.1);        # sleep for 1/10 second
-  if ($USE_STATUSBAR)
+  if ($USE_STATUSBAR && $StatusTimer)
   {
-    if ($StatusTimer)
-    { $StatusTimer-- }
-    else
-    {
-     erase($Status);
-     &display_refresh($Status);
-    }
+    $StatusTimer--;
+    if (!$StatusTimer)
+    { &status_draw(NULL); }
   }
 }
 
@@ -1770,19 +1769,25 @@ $SIG{INT} = $SIG{TERM} = \&catchsig;
 $SIG{WINCH} = \&catchwinch;
 
 &display_open();
+$@ = "";		# Ignore Curses error
 eval
 {
   my $key_pressed = &input_get_any();
   my $i;
 
+  # Redraw the status line if dirty
+  if ($Status_Dirty)
+  {
+    if ($USE_STATUSBAR)
+    { &status_draw(NULL); }
+    else
+    { $Window_Dirty[0] = $TRUE; $Status_Dirty = $FALSE; }
+  }
+
   # Partially or fully redraw dirty windows
   for ($i = 0; $i <= $#Window_Dirty; $i++)
   {
      &window_draw($i, !defined($key_pressed)) if $Window_Dirty[$i];
-  }
-  if ($USE_STATUSBAR && $Status_Dirty)
-  {
-     &status_draw(NULL);
   }
 
   if (!defined($key_pressed))
