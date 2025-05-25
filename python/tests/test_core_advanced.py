@@ -245,6 +245,44 @@ class TestCoreAdvanced(unittest.TestCase):
         # Check if "0" is on recycle pile: DELETE_HOME_ID ("99") --(+d.2)--> "0"
         self.assertEqual(self.zz.cell_nbr(DELETE_HOME_ID, "+d.2"), "0")
 
+    def test_07_atcursor_execute(self):
+        # Use self.zz (which is set up with initial geometry).
+        target_cell_id = self.zz.cell_new("Initial Target Content")
+        
+        # Create a program cell.
+        # Using f-string to embed target_cell_id and also test if current_cell_id is available.
+        prog_cell_id = self.zz.cell_new() # Create first, then set content with its own ID
+        prog_code = f"#PYTHONECUTE zz.cell_set('{target_cell_id}', f'Executed Content by {{current_cell_id}}')"
+        self.zz.cell_set(prog_cell_id, prog_code)
+
+        # Ensure cursor 0 is pointing to prog_cell_id.
+        cursor0_id = self.zz.get_cursor(0)
+        self.assertIsNotNone(cursor0_id, "Cursor 0 should exist")
+        if cursor0_id: # Should always be true if assertIsNotNone passes
+            self.zz.cursor_jump(cursor0_id, prog_cell_id)
+            self.assertEqual(self.zz.get_accursed(0), prog_cell_id, "Cursor 0 should point to prog_cell_id")
+
+        # Call atcursor_execute(0).
+        self.zz.atcursor_execute(0)
+
+        # Assert the target cell's content has changed.
+        expected_content = f"Executed Content by {prog_cell_id}"
+        self.assertEqual(self.zz.cell_get(target_cell_id), expected_content)
+
+        # Test error handling:
+        error_prog_cell_id = self.zz.cell_new("#PYTHONECUTE 1/0")
+        if cursor0_id: # Should always be true
+            self.zz.cursor_jump(cursor0_id, error_prog_cell_id)
+        
+        # This should print an error (to stderr or stdout depending on logging) 
+        # but not crash the test runner.
+        # We can't directly assert printed output easily in unittest without more setup.
+        # For now, just call it and ensure no unhandled exception from ZigzagSpace.
+        self.zz.atcursor_execute(0) 
+        
+        # Add a dummy assertion to signify the test ran this far.
+        self.assertTrue(True, "Error execution test ran without crashing ZigzagSpace")
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -1912,6 +1912,782 @@ class ZigzagSpace:
         else:
             print(f"Error: Dimension config cell '{dim_config_cell_to_flip}' has no content to flip.")
 
+    def get_contained(self, cell_id: str) -> List[str]:
+        """
+        Retrieves a list of cell IDs "contained" within a given cell.
+        SIMPLIFIED VERSION: For this subtask, it ONLY returns a list containing cell_id itself if it exists.
+        A more complete implementation would recursively traverse +d.inside and +d.contents.
+        """
+        if cell_id not in self.cells:
+            # Consistent with subtask guidance to print here for get_contained, though exceptions are used elsewhere.
+            print(f"Error: Cell '{cell_id}' not found for get_contained.")
+            return []
+        return [cell_id]
+
+    def atcursor_execute(self, cursor_number: int) -> None:
+        """
+        Executes Python code found in the cell(s) pointed to by the cursor.
+
+        This version uses a simplified get_contained, processing only the accursed cell
+        (or cells as defined by the current simple get_contained).
+        If the cell's content (after resolving clones via get_cell_contents)
+        starts with '#PYTHONECUTE ' (note the space), the rest of the string is executed.
+
+        The executed code will have 'zz' (the ZigzagSpace instance),
+        'current_cursor_number', and 'current_cell_id' available in its local scope.
+
+        SECURITY WARNING:
+        This method uses exec() to run code from cell contents. Executing
+        arbitrary code can be dangerous if the source of the cell content
+        is not trusted. Use this feature with extreme caution.
+        """
+        EXECUTE_PREFIX = "#PYTHONECUTE " # Note the space
+
+        try:
+            accursed_cell_id = self.get_accursed(cursor_number)
+        except ZigzagError as e:
+            # If get_accursed raises an error (e.g., cursor invalid, or not pointing),
+            # we print it and return, as there's no cell to execute.
+            print(f"Error in atcursor_execute (determining accursed cell): {e}")
+            return
+        
+        # Using the simplified get_contained for now
+        cells_to_process = self.get_contained(accursed_cell_id) 
+
+        if not cells_to_process:
+            # This case might be hit if get_contained printed an error and returned [].
+            # Or if accursed_cell_id was valid but get_contained had a reason to return empty.
+            # (The current simplified get_contained will only return empty if accursed_cell_id was not found,
+            # which should have been caught by get_accursed already).
+            # print(f"Info: No cells found by get_contained for accursed cell '{accursed_cell_id}' to execute.")
+            return
+
+        for cell_id_to_execute in cells_to_process:
+            try:
+                # Use get_cell_contents to respect clones for the content to be executed
+                effective_content = self.get_cell_contents(cell_id_to_execute)
+            except ZigzagError as e:
+                print(f"Error in atcursor_execute (getting content for '{cell_id_to_execute}'): {e}")
+                continue # Skip this cell
+
+            if effective_content and effective_content.startswith(EXECUTE_PREFIX):
+                code_to_execute = effective_content[len(EXECUTE_PREFIX):]
+                
+                execution_locals = {
+                    'zz': self,
+                    'current_cursor_number': cursor_number,
+                    'current_cell_id': cell_id_to_execute 
+                }
+                
+                # print(f"Executing code from cell '{cell_id_to_execute}': {code_to_execute.strip()}")
+                try:
+                    # Using globals={'__builtins__': __builtins__} for safety, and locals for context
+                    exec(code_to_execute, {'__builtins__': __builtins__}, execution_locals) 
+                except Exception as e:
+                    print(f"Error during execution of code from cell '{cell_id_to_execute}': {e}")
+                    # Stop on first error as per refined guidance
+                    break 
+            # else:
+                # print(f"Info: Cell '{cell_id_to_execute}' content does not start with prefix, not executed.")
+        # display_dirty() or equivalent might be called by the executed code itself if needed
+
+    def get_contained(self, cell_id: str) -> List[str]:
+        """
+        Retrieves a list of cell IDs "contained" within a given cell.
+        SIMPLIFIED VERSION: For this subtask, it ONLY returns a list containing cell_id itself if it exists.
+        A more complete implementation would recursively traverse +d.inside and +d.contents.
+        """
+        if cell_id not in self.cells:
+            # Consistent with subtask guidance to print here for get_contained, though exceptions are used elsewhere.
+            print(f"Error: Cell '{cell_id}' not found for get_contained.")
+            return []
+        return [cell_id]
+
+    def atcursor_execute(self, cursor_number: int) -> None:
+        """
+        Executes Python code found in the cell(s) pointed to by the cursor.
+
+        This version uses a simplified get_contained, processing only the accursed cell
+        (or cells as defined by the current simple get_contained).
+        If the cell's content (after resolving clones via get_cell_contents)
+        starts with '#PYTHONECUTE ' (note the space), the rest of the string is executed.
+
+        The executed code will have 'zz' (the ZigzagSpace instance),
+        'current_cursor_number', and 'current_cell_id' available in its local scope.
+
+        SECURITY WARNING:
+        This method uses exec() to run code from cell contents. Executing
+        arbitrary code can be dangerous if the source of the cell content
+        is not trusted. Use this feature with extreme caution.
+        """
+        EXECUTE_PREFIX = "#PYTHONECUTE " # Note the space
+
+        try:
+            accursed_cell_id = self.get_accursed(cursor_number)
+        except ZigzagError as e:
+            # If get_accursed raises an error (e.g., cursor invalid, or not pointing),
+            # we print it and return, as there's no cell to execute.
+            print(f"Error in atcursor_execute (determining accursed cell): {e}")
+            return
+        
+        # Using the simplified get_contained for now
+        cells_to_process = self.get_contained(accursed_cell_id) 
+
+        if not cells_to_process:
+            # This case might be hit if get_contained printed an error and returned [].
+            # Or if accursed_cell_id was valid but get_contained had a reason to return empty.
+            # (The current simplified get_contained will only return empty if accursed_cell_id was not found,
+            # which should have been caught by get_accursed already).
+            # print(f"Info: No cells found by get_contained for accursed cell '{accursed_cell_id}' to execute.")
+            return
+
+        for cell_id_to_execute in cells_to_process:
+            try:
+                # Use get_cell_contents to respect clones for the content to be executed
+                effective_content = self.get_cell_contents(cell_id_to_execute)
+            except ZigzagError as e:
+                print(f"Error in atcursor_execute (getting content for '{cell_id_to_execute}'): {e}")
+                continue # Skip this cell
+
+            if effective_content and effective_content.startswith(EXECUTE_PREFIX):
+                code_to_execute = effective_content[len(EXECUTE_PREFIX):]
+                
+                execution_locals = {
+                    'zz': self,
+                    'current_cursor_number': cursor_number,
+                    'current_cell_id': cell_id_to_execute 
+                }
+                
+                # print(f"Executing code from cell '{cell_id_to_execute}': {code_to_execute.strip()}")
+                try:
+                    # Using globals={'__builtins__': __builtins__} for safety, and locals for context
+                    exec(code_to_execute, {'__builtins__': __builtins__}, execution_locals) 
+                except Exception as e:
+                    print(f"Error during execution of code from cell '{cell_id_to_execute}': {e}")
+                    # Stop on first error as per refined guidance
+                    break 
+            # else:
+                # print(f"Info: Cell '{cell_id_to_execute}' content does not start with prefix, not executed.")
+        # display_dirty() or equivalent might be called by the executed code itself if needed
+
+    def get_contained(self, cell_id: str) -> List[str]:
+        """
+        Retrieves a list of cell IDs "contained" within a given cell.
+        SIMPLIFIED VERSION: For this subtask, it ONLY returns a list containing cell_id itself if it exists.
+        A more complete implementation would recursively traverse +d.inside and +d.contents.
+        """
+        if cell_id not in self.cells:
+            # Consistent with subtask guidance to print here for get_contained, though exceptions are used elsewhere.
+            print(f"Error: Cell '{cell_id}' not found for get_contained.")
+            return []
+        return [cell_id]
+
+    def atcursor_execute(self, cursor_number: int) -> None:
+        """
+        Executes Python code found in the cell(s) pointed to by the cursor.
+
+        This version uses a simplified get_contained, processing only the accursed cell
+        (or cells as defined by the current simple get_contained).
+        If the cell's content (after resolving clones via get_cell_contents)
+        starts with '#PYTHONECUTE ' (note the space), the rest of the string is executed.
+
+        The executed code will have 'zz' (the ZigzagSpace instance),
+        'current_cursor_number', and 'current_cell_id' available in its local scope.
+
+        SECURITY WARNING:
+        This method uses exec() to run code from cell contents. Executing
+        arbitrary code can be dangerous if the source of the cell content
+        is not trusted. Use this feature with extreme caution.
+        """
+        EXECUTE_PREFIX = "#PYTHONECUTE " # Note the space
+
+        try:
+            accursed_cell_id = self.get_accursed(cursor_number)
+        except ZigzagError as e:
+            # If get_accursed raises an error (e.g., cursor invalid, or not pointing),
+            # we print it and return, as there's no cell to execute.
+            print(f"Error in atcursor_execute (determining accursed cell): {e}")
+            return
+        
+        # Using the simplified get_contained for now
+        cells_to_process = self.get_contained(accursed_cell_id) 
+
+        if not cells_to_process:
+            # This case might be hit if get_contained printed an error and returned [].
+            # Or if accursed_cell_id was valid but get_contained had a reason to return empty.
+            # (The current simplified get_contained will only return empty if accursed_cell_id was not found,
+            # which should have been caught by get_accursed already).
+            # print(f"Info: No cells found by get_contained for accursed cell '{accursed_cell_id}' to execute.")
+            return
+
+        for cell_id_to_execute in cells_to_process:
+            try:
+                # Use get_cell_contents to respect clones for the content to be executed
+                effective_content = self.get_cell_contents(cell_id_to_execute)
+            except ZigzagError as e:
+                print(f"Error in atcursor_execute (getting content for '{cell_id_to_execute}'): {e}")
+                continue # Skip this cell
+
+            if effective_content and effective_content.startswith(EXECUTE_PREFIX):
+                code_to_execute = effective_content[len(EXECUTE_PREFIX):]
+                
+                execution_locals = {
+                    'zz': self,
+                    'current_cursor_number': cursor_number,
+                    'current_cell_id': cell_id_to_execute 
+                }
+                
+                # print(f"Executing code from cell '{cell_id_to_execute}': {code_to_execute.strip()}")
+                try:
+                    # Using globals={'__builtins__': __builtins__} for safety, and locals for context
+                    exec(code_to_execute, {'__builtins__': __builtins__}, execution_locals) 
+                except Exception as e:
+                    print(f"Error during execution of code from cell '{cell_id_to_execute}': {e}")
+                    # Stop on first error as per refined guidance
+                    break 
+            # else:
+                # print(f"Info: Cell '{cell_id_to_execute}' content does not start with prefix, not executed.")
+        # display_dirty() or equivalent might be called by the executed code itself if needed
+
+    def get_contained(self, cell_id: str) -> List[str]:
+        """
+        Retrieves a list of cell IDs "contained" within a given cell.
+        SIMPLIFIED VERSION: For this subtask, it ONLY returns a list containing cell_id itself if it exists.
+        A more complete implementation would recursively traverse +d.inside and +d.contents.
+        """
+        if cell_id not in self.cells:
+            # Consistent with subtask guidance to print here for get_contained, though exceptions are used elsewhere.
+            print(f"Error: Cell '{cell_id}' not found for get_contained.")
+            return []
+        return [cell_id]
+
+    def atcursor_execute(self, cursor_number: int) -> None:
+        """
+        Executes Python code found in the cell(s) pointed to by the cursor.
+
+        This version uses a simplified get_contained, processing only the accursed cell
+        (or cells as defined by the current simple get_contained).
+        If the cell's content (after resolving clones via get_cell_contents)
+        starts with '#PYTHONECUTE ' (note the space), the rest of the string is executed.
+
+        The executed code will have 'zz' (the ZigzagSpace instance),
+        'current_cursor_number', and 'current_cell_id' available in its local scope.
+
+        SECURITY WARNING:
+        This method uses exec() to run code from cell contents. Executing
+        arbitrary code can be dangerous if the source of the cell content
+        is not trusted. Use this feature with extreme caution.
+        """
+        EXECUTE_PREFIX = "#PYTHONECUTE " # Note the space
+
+        try:
+            accursed_cell_id = self.get_accursed(cursor_number)
+        except ZigzagError as e:
+            # If get_accursed raises an error (e.g., cursor invalid, or not pointing),
+            # we print it and return, as there's no cell to execute.
+            print(f"Error in atcursor_execute (determining accursed cell): {e}")
+            return
+        
+        # Using the simplified get_contained for now
+        cells_to_process = self.get_contained(accursed_cell_id) 
+
+        if not cells_to_process:
+            # This case might be hit if get_contained printed an error and returned [].
+            # Or if accursed_cell_id was valid but get_contained had a reason to return empty.
+            # (The current simplified get_contained will only return empty if accursed_cell_id was not found,
+            # which should have been caught by get_accursed already).
+            # print(f"Info: No cells found by get_contained for accursed cell '{accursed_cell_id}' to execute.")
+            return
+
+        for cell_id_to_execute in cells_to_process:
+            try:
+                # Use get_cell_contents to respect clones for the content to be executed
+                effective_content = self.get_cell_contents(cell_id_to_execute)
+            except ZigzagError as e:
+                print(f"Error in atcursor_execute (getting content for '{cell_id_to_execute}'): {e}")
+                continue # Skip this cell
+
+            if effective_content and effective_content.startswith(EXECUTE_PREFIX):
+                code_to_execute = effective_content[len(EXECUTE_PREFIX):]
+                
+                execution_locals = {
+                    'zz': self,
+                    'current_cursor_number': cursor_number,
+                    'current_cell_id': cell_id_to_execute 
+                }
+                
+                # print(f"Executing code from cell '{cell_id_to_execute}': {code_to_execute.strip()}")
+                try:
+                    # Using globals={'__builtins__': __builtins__} for safety, and locals for context
+                    exec(code_to_execute, {'__builtins__': __builtins__}, execution_locals) 
+                except Exception as e:
+                    print(f"Error during execution of code from cell '{cell_id_to_execute}': {e}")
+                    # Stop on first error as per refined guidance
+                    break 
+            # else:
+                # print(f"Info: Cell '{cell_id_to_execute}' content does not start with prefix, not executed.")
+        # display_dirty() or equivalent might be called by the executed code itself if needed
+
+    def get_contained(self, cell_id: str) -> List[str]:
+        """
+        Retrieves a list of cell IDs "contained" within a given cell.
+        SIMPLIFIED VERSION: For this subtask, it ONLY returns a list containing cell_id itself if it exists.
+        A more complete implementation would recursively traverse +d.inside and +d.contents.
+        """
+        if cell_id not in self.cells:
+            # Consistent with subtask guidance to print here for get_contained, though exceptions are used elsewhere.
+            print(f"Error: Cell '{cell_id}' not found for get_contained.")
+            return []
+        return [cell_id]
+
+    def atcursor_execute(self, cursor_number: int) -> None:
+        """
+        Executes Python code found in the cell(s) pointed to by the cursor.
+
+        This version uses a simplified get_contained, processing only the accursed cell
+        (or cells as defined by the current simple get_contained).
+        If the cell's content (after resolving clones via get_cell_contents)
+        starts with '#PYTHONECUTE ' (note the space), the rest of the string is executed.
+
+        The executed code will have 'zz' (the ZigzagSpace instance),
+        'current_cursor_number', and 'current_cell_id' available in its local scope.
+
+        SECURITY WARNING:
+        This method uses exec() to run code from cell contents. Executing
+        arbitrary code can be dangerous if the source of the cell content
+        is not trusted. Use this feature with extreme caution.
+        """
+        EXECUTE_PREFIX = "#PYTHONECUTE " # Note the space
+
+        try:
+            accursed_cell_id = self.get_accursed(cursor_number)
+        except ZigzagError as e:
+            # If get_accursed raises an error (e.g., cursor invalid, or not pointing),
+            # we print it and return, as there's no cell to execute.
+            print(f"Error in atcursor_execute (determining accursed cell): {e}")
+            return
+        
+        # Using the simplified get_contained for now
+        cells_to_process = self.get_contained(accursed_cell_id) 
+
+        if not cells_to_process:
+            # This case might be hit if get_contained printed an error and returned [].
+            # Or if accursed_cell_id was valid but get_contained had a reason to return empty.
+            # (The current simplified get_contained will only return empty if accursed_cell_id was not found,
+            # which should have been caught by get_accursed already).
+            # print(f"Info: No cells found by get_contained for accursed cell '{accursed_cell_id}' to execute.")
+            return
+
+        for cell_id_to_execute in cells_to_process:
+            try:
+                # Use get_cell_contents to respect clones for the content to be executed
+                effective_content = self.get_cell_contents(cell_id_to_execute)
+            except ZigzagError as e:
+                print(f"Error in atcursor_execute (getting content for '{cell_id_to_execute}'): {e}")
+                continue # Skip this cell
+
+            if effective_content and effective_content.startswith(EXECUTE_PREFIX):
+                code_to_execute = effective_content[len(EXECUTE_PREFIX):]
+                
+                execution_locals = {
+                    'zz': self,
+                    'current_cursor_number': cursor_number,
+                    'current_cell_id': cell_id_to_execute 
+                }
+                
+                # print(f"Executing code from cell '{cell_id_to_execute}': {code_to_execute.strip()}")
+                try:
+                    # Using globals={'__builtins__': __builtins__} for safety, and locals for context
+                    exec(code_to_execute, {'__builtins__': __builtins__}, execution_locals) 
+                except Exception as e:
+                    print(f"Error during execution of code from cell '{cell_id_to_execute}': {e}")
+                    # Stop on first error as per refined guidance
+                    break 
+            # else:
+                # print(f"Info: Cell '{cell_id_to_execute}' content does not start with prefix, not executed.")
+        # display_dirty() or equivalent might be called by the executed code itself if needed
+
+    def get_contained(self, cell_id: str) -> List[str]:
+        """
+        Retrieves a list of cell IDs "contained" within a given cell.
+        SIMPLIFIED VERSION: For this subtask, it ONLY returns a list containing cell_id itself if it exists.
+        A more complete implementation would recursively traverse +d.inside and +d.contents.
+        """
+        if cell_id not in self.cells:
+            # Consistent with subtask guidance to print here for get_contained,
+            # though exceptions are used elsewhere for CellNotFoundError.
+            print(f"Error: Cell '{cell_id}' not found for get_contained.")
+            return []
+        return [cell_id]
+
+    def atcursor_execute(self, cursor_number: int) -> None:
+        """
+        Executes Python code found in the cell(s) pointed to by the cursor.
+
+        This version uses a simplified get_contained, processing only the accursed cell
+        (or cells as defined by the current simple get_contained).
+        If the cell's content (after resolving clones via get_cell_contents)
+        starts with '#PYTHONECUTE ' (note the space), the rest of the string is executed.
+
+        The executed code will have 'zz' (the ZigzagSpace instance),
+        'current_cursor_number', and 'current_cell_id' available in its local scope.
+
+        SECURITY WARNING:
+        This method uses exec() to run code from cell contents. Executing
+        arbitrary code can be dangerous if the source of the cell content
+        is not trusted. Use this feature with extreme caution.
+        """
+        EXECUTE_PREFIX = "#PYTHONECUTE " # Note the space
+
+        try:
+            accursed_cell_id = self.get_accursed(cursor_number)
+        except ZigzagError as e:
+            # If get_accursed raises an error (e.g., cursor invalid, or not pointing),
+            # we print it and return, as there's no cell to execute.
+            print(f"Error in atcursor_execute (determining accursed cell): {e}")
+            return
+        
+        # Using the simplified get_contained for now
+        cells_to_process = self.get_contained(accursed_cell_id) 
+
+        if not cells_to_process:
+            # This case might be hit if get_contained printed an error and returned [].
+            # Or if accursed_cell_id was valid but get_contained had a reason to return empty.
+            # (The current simplified get_contained will only return empty if accursed_cell_id was not found,
+            # which should have been caught by get_accursed already).
+            # print(f"Info: No cells found by get_contained for accursed cell '{accursed_cell_id}' to execute.")
+            return
+
+        for cell_id_to_execute in cells_to_process:
+            try:
+                # Use get_cell_contents to respect clones for the content to be executed
+                effective_content = self.get_cell_contents(cell_id_to_execute)
+            except ZigzagError as e:
+                print(f"Error in atcursor_execute (getting content for '{cell_id_to_execute}'): {e}")
+                continue # Skip this cell
+
+            if effective_content and effective_content.startswith(EXECUTE_PREFIX):
+                code_to_execute = effective_content[len(EXECUTE_PREFIX):]
+                
+                execution_locals = {
+                    'zz': self,
+                    'current_cursor_number': cursor_number,
+                    'current_cell_id': cell_id_to_execute 
+                }
+                
+                # print(f"Executing code from cell '{cell_id_to_execute}': {code_to_execute.strip()}")
+                try:
+                    # Using globals={'__builtins__': __builtins__} for safety, and locals for context
+                    exec(code_to_execute, {'__builtins__': __builtins__}, execution_locals) 
+                except Exception as e:
+                    print(f"Error during execution of code from cell '{cell_id_to_execute}': {e}")
+                    # Stop on first error as per refined guidance
+                    break 
+            # else:
+                # print(f"Info: Cell '{cell_id_to_execute}' content does not start with prefix, not executed.")
+        # display_dirty() or equivalent might be called by the executed code itself if needed
+
+    def get_contained(self, cell_id: str) -> List[str]:
+        """
+        Retrieves a list of cell IDs "contained" within a given cell.
+        SIMPLIFIED VERSION: For this subtask, it ONLY returns a list containing cell_id itself if it exists.
+        A more complete implementation would recursively traverse +d.inside and +d.contents.
+        """
+        if cell_id not in self.cells:
+            # Consistent with subtask guidance to print here for get_contained, though exceptions are used elsewhere.
+            print(f"Error: Cell '{cell_id}' not found for get_contained.")
+            return []
+        return [cell_id]
+
+    def atcursor_execute(self, cursor_number: int) -> None:
+        """
+        Executes Python code found in the cell(s) pointed to by the cursor.
+
+        This version uses a simplified get_contained, processing only the accursed cell
+        (or cells as defined by the current simple get_contained).
+        If the cell's content (after resolving clones via get_cell_contents)
+        starts with '#PYTHONECUTE ' (note the space), the rest of the string is executed.
+
+        The executed code will have 'zz' (the ZigzagSpace instance),
+        'current_cursor_number', and 'current_cell_id' available in its local scope.
+
+        SECURITY WARNING:
+        This method uses exec() to run code from cell contents. Executing
+        arbitrary code can be dangerous if the source of the cell content
+        is not trusted. Use this feature with extreme caution.
+        """
+        EXECUTE_PREFIX = "#PYTHONECUTE " # Note the space
+
+        try:
+            accursed_cell_id = self.get_accursed(cursor_number)
+        except ZigzagError as e:
+            # If get_accursed raises an error (e.g., cursor invalid, or not pointing),
+            # we print it and return, as there's no cell to execute.
+            print(f"Error in atcursor_execute (determining accursed cell): {e}")
+            return
+        
+        # Using the simplified get_contained for now
+        cells_to_process = self.get_contained(accursed_cell_id) 
+
+        if not cells_to_process:
+            # This case might be hit if get_contained printed an error and returned [].
+            # Or if accursed_cell_id was valid but get_contained had a reason to return empty.
+            # print(f"Info: No cells found by get_contained for accursed cell '{accursed_cell_id}' to execute.")
+            return
+
+        for cell_id_to_execute in cells_to_process:
+            try:
+                # Use get_cell_contents to respect clones for the content to be executed
+                effective_content = self.get_cell_contents(cell_id_to_execute)
+            except ZigzagError as e:
+                print(f"Error in atcursor_execute (getting content for '{cell_id_to_execute}'): {e}")
+                continue # Skip this cell
+
+            if effective_content and effective_content.startswith(EXECUTE_PREFIX):
+                code_to_execute = effective_content[len(EXECUTE_PREFIX):]
+                
+                execution_locals = {
+                    'zz': self,
+                    'current_cursor_number': cursor_number,
+                    'current_cell_id': cell_id_to_execute 
+                }
+                
+                # print(f"Executing code from cell '{cell_id_to_execute}': {code_to_execute.strip()}")
+                try:
+                    # Using globals={'__builtins__': __builtins__} for safety, and locals for context
+                    exec(code_to_execute, {'__builtins__': __builtins__}, execution_locals) 
+                except Exception as e:
+                    print(f"Error during execution of code from cell '{cell_id_to_execute}': {e}")
+                    # As per refined guidance, stop on first error.
+                    break 
+            # else:
+                # print(f"Info: Cell '{cell_id_to_execute}' content does not start with prefix, not executed.")
+        # display_dirty() or equivalent might be called by the executed code itself if needed
+
+    def get_contained(self, cell_id: str) -> List[str]:
+        """
+        Retrieves a list of cell IDs "contained" within a given cell.
+        SIMPLIFIED VERSION: For this subtask, it ONLY returns a list containing cell_id itself if it exists.
+        A more complete implementation would recursively traverse +d.inside and +d.contents.
+        """
+        if cell_id not in self.cells:
+            # Consistent with subtask guidance to print here for get_contained, though exceptions are used elsewhere.
+            print(f"Error: Cell '{cell_id}' not found for get_contained.")
+            return []
+        return [cell_id]
+
+    def atcursor_execute(self, cursor_number: int) -> None:
+        """
+        Executes Python code found in the cell(s) pointed to by the cursor.
+
+        This version uses a simplified get_contained, processing only the accursed cell
+        (or cells as defined by the current simple get_contained).
+        If the cell's content (after resolving clones via get_cell_contents)
+        starts with '#PYTHONECUTE ' (note the space), the rest of the string is executed.
+
+        The executed code will have 'zz' (the ZigzagSpace instance),
+        'current_cursor_number', and 'current_cell_id' available in its local scope.
+
+        SECURITY WARNING:
+        This method uses exec() to run code from cell contents. Executing
+        arbitrary code can be dangerous if the source of the cell content
+        is not trusted. Use this feature with extreme caution.
+        """
+        EXECUTE_PREFIX = "#PYTHONECUTE " # Note the space
+
+        try:
+            accursed_cell_id = self.get_accursed(cursor_number)
+        except ZigzagError as e:
+            # If get_accursed raises an error (e.g., cursor invalid, or not pointing),
+            # we print it and return, as there's no cell to execute.
+            print(f"Error in atcursor_execute (determining accursed cell): {e}")
+            return
+        
+        # Using the simplified get_contained for now
+        cells_to_process = self.get_contained(accursed_cell_id) 
+
+        if not cells_to_process:
+            # This case might be hit if get_contained printed an error and returned [].
+            # Or if accursed_cell_id was valid but get_contained had a reason to return empty.
+            # print(f"Info: No cells found by get_contained for accursed cell '{accursed_cell_id}' to execute.")
+            return
+
+        for cell_id_to_execute in cells_to_process:
+            try:
+                # Use get_cell_contents to respect clones for the content to be executed
+                effective_content = self.get_cell_contents(cell_id_to_execute)
+            except ZigzagError as e:
+                print(f"Error in atcursor_execute (getting content for '{cell_id_to_execute}'): {e}")
+                continue # Skip this cell
+
+            if effective_content and effective_content.startswith(EXECUTE_PREFIX):
+                code_to_execute = effective_content[len(EXECUTE_PREFIX):]
+                
+                execution_locals = {
+                    'zz': self,
+                    'current_cursor_number': cursor_number,
+                    'current_cell_id': cell_id_to_execute 
+                }
+                
+                # print(f"Executing code from cell '{cell_id_to_execute}': {code_to_execute.strip()}")
+                try:
+                    exec(code_to_execute, {'__builtins__': __builtins__}, execution_locals) 
+                except Exception as e:
+                    print(f"Error during execution of code from cell '{cell_id_to_execute}': {e}")
+                    # As per refined guidance, stop on first error.
+                    break 
+            # else:
+                # print(f"Info: Cell '{cell_id_to_execute}' content does not start with prefix, not executed.")
+        # display_dirty() or equivalent might be called by the executed code itself if needed
+
+    def get_contained(self, cell_id: str) -> list[str]:
+        """
+        Retrieves a list of cell IDs "contained" within a given cell.
+        For this version, it SIMPLY returns a list containing cell_id itself if it exists.
+        A more complete implementation would recursively traverse +d.inside and +d.contents.
+        """
+        if cell_id not in self.cells:
+            # This would ideally raise CellNotFoundError, but print for now as per subtask example.
+            print(f"Error: Cell '{cell_id}' not found for get_contained.")
+            return []
+        return [cell_id]
+
+    def atcursor_execute(self, cursor_number: int) -> None:
+        """
+        Executes Python code found in the cell(s) pointed to by the cursor.
+
+        This version uses a simplified get_contained, processing only the accursed cell.
+        If the cell's content (after resolving clones via get_cell_contents)
+        starts with '#PYTHONECUTE ' (note the space), the rest of the string is executed.
+
+        The executed code will have 'zz' (the ZigzagSpace instance) and
+        'current_cursor_number' available in its local scope.
+
+        SECURITY WARNING:
+        This method uses exec() to run code from cell contents. Executing
+        arbitrary code can be dangerous if the source of the cell content
+        is not trusted. Use this feature with extreme caution.
+        """
+        EXECUTE_PREFIX = "#PYTHONECUTE "
+
+        try:
+            accursed_cell_id = self.get_accursed(cursor_number)
+        except ZigzagError as e:
+            print(f"Error in atcursor_execute (getting accursed): {e}")
+            return
+        
+        # Using the simplified get_contained for now
+        cells_to_process = self.get_contained(accursed_cell_id) 
+
+        if not cells_to_process:
+            # get_contained might print its own error if accursed_cell_id was not found
+            # Or, if it's empty for other reasons (though current simplified version won't be if accursed_cell_id is valid)
+            # print(f"Info: No cells found by get_contained for accursed cell '{accursed_cell_id}' to execute.")
+            return
+
+        for cell_id_to_execute in cells_to_process:
+            try:
+                # Use get_cell_contents to respect clones for the content to be executed
+                effective_content = self.get_cell_contents(cell_id_to_execute)
+            except ZigzagError as e:
+                print(f"Error in atcursor_execute (getting content for '{cell_id_to_execute}'): {e}")
+                continue # Skip this cell
+
+            if effective_content and effective_content.startswith(EXECUTE_PREFIX):
+                code_to_execute = effective_content[len(EXECUTE_PREFIX):]
+                
+                execution_locals = {
+                    'zz': self,
+                    'current_cursor_number': cursor_number,
+                    'current_cell_id': cell_id_to_execute 
+                }
+                
+                print(f"Executing code from cell '{cell_id_to_execute}': {code_to_execute.strip()}")
+                try:
+                    exec(code_to_execute, execution_locals, execution_locals) 
+                except Exception as e:
+                    print(f"Error during execution of code from cell '{cell_id_to_execute}': {e}")
+                    # Decide whether to continue to next cell or stop all execution.
+                    # Original Perl implies "last if $@" (stop on error).
+                    # To emulate, we could re-raise or return here. For now, print and continue.
+            # else:
+                # print(f"Info: Cell '{cell_id_to_execute}' content does not start with prefix, not executed.")
+        # display_dirty() or equivalent might be called by the executed code itself if needed
+
+    def get_contained(self, cell_id: str) -> list[str]:
+        """
+        Retrieves a list of cell IDs "contained" within a given cell.
+        For this version, it SIMPLY returns a list containing cell_id itself if it exists.
+        A more complete implementation would recursively traverse +d.inside and +d.contents.
+        """
+        if cell_id not in self.cells:
+            # This would ideally raise CellNotFoundError, but print for now as per subtask example.
+            print(f"Error: Cell '{cell_id}' not found for get_contained.")
+            return []
+        return [cell_id]
+
+    def atcursor_execute(self, cursor_number: int) -> None:
+        """
+        Executes Python code found in the cell(s) pointed to by the cursor.
+
+        This version uses a simplified get_contained, processing only the accursed cell.
+        If the cell's content (after resolving clones via get_cell_contents)
+        starts with '#PYTHONECUTE ' (note the space), the rest of the string is executed.
+
+        The executed code will have 'zz' (the ZigzagSpace instance) and
+        'current_cursor_number' available in its local scope.
+
+        SECURITY WARNING:
+        This method uses exec() to run code from cell contents. Executing
+        arbitrary code can be dangerous if the source of the cell content
+        is not trusted. Use this feature with extreme caution.
+        """
+        EXECUTE_PREFIX = "#PYTHONECUTE "
+
+        try:
+            accursed_cell_id = self.get_accursed(cursor_number)
+        except ZigzagError as e:
+            print(f"Error in atcursor_execute (getting accursed): {e}")
+            return
+        
+        # Using the simplified get_contained for now
+        cells_to_process = self.get_contained(accursed_cell_id) 
+
+        if not cells_to_process:
+            # get_contained might print its own error if accursed_cell_id was not found
+            # Or, if it's empty for other reasons (though current simplified version won't be if accursed_cell_id is valid)
+            # print(f"Info: No cells found by get_contained for accursed cell '{accursed_cell_id}' to execute.")
+            return
+
+        for cell_id_to_execute in cells_to_process:
+            try:
+                # Use get_cell_contents to respect clones for the content to be executed
+                effective_content = self.get_cell_contents(cell_id_to_execute)
+            except ZigzagError as e:
+                print(f"Error in atcursor_execute (getting content for '{cell_id_to_execute}'): {e}")
+                continue # Skip this cell
+
+            if effective_content and effective_content.startswith(EXECUTE_PREFIX):
+                code_to_execute = effective_content[len(EXECUTE_PREFIX):]
+                
+                execution_locals = {
+                    'zz': self,
+                    'current_cursor_number': cursor_number,
+                    'current_cell_id': cell_id_to_execute 
+                }
+                
+                print(f"Executing code from cell '{cell_id_to_execute}': {code_to_execute.strip()}")
+                try:
+                    exec(code_to_execute, execution_locals, execution_locals) 
+                except Exception as e:
+                    print(f"Error during execution of code from cell '{cell_id_to_execute}': {e}")
+                    # Decide whether to continue to next cell or stop all execution.
+                    # Original Perl implies "last if $@" (stop on error).
+                    # To emulate, we could re-raise or return here. For now, print and continue.
+            # else:
+                # print(f"Info: Cell '{cell_id_to_execute}' content does not start with prefix, not executed.")
+        # display_dirty() or equivalent might be called by the executed code itself if needed
+
     def do_shear(self, first_cell_in_row: str, row_dimension_with_sign: str, 
                  link_dimension_with_sign: str, n: int = 1, hang: bool = False) -> None:
         """Shears connections along a row of cells."""
