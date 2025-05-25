@@ -283,6 +283,131 @@ class TestCoreAdvanced(unittest.TestCase):
         # Add a dummy assertion to signify the test ran this far.
         self.assertTrue(True, "Error execution test ran without crashing ZigzagSpace")
 
+    def test_08_get_contained_complex(self):
+        zz = self.zz # Re-use the setup zz space, or create a fresh one for isolation
+
+        # Test Case 1: Simple +d.inside chain
+        # A --(+d.inside)--> B --(+d.inside)--> C
+        a1 = zz.cell_new("A1_gc")
+        b1 = zz.cell_new("B1_gc")
+        c1 = zz.cell_new("C1_gc")
+        zz.link_make(a1, b1, "+d.inside")
+        zz.link_make(b1, c1, "+d.inside")
+        # Expected order: A1, (A1.contents - none), (A1.insides - B1)
+        # -> then B1, (B1.contents - none), (B1.insides - C1)
+        # -> then C1, (C1.contents - none), (C1.insides - none)
+        self.assertEqual(zz.get_contained(a1), [a1, b1, c1])
+
+        # Test Case 2: +d.inside, then +d.contents (item is not a container head)
+        # A --(+d.inside)--> B
+        # B --(+d.contents)--> C  (C has no -d.inside link)
+        a2 = zz.cell_new("A2_gc")
+        b2 = zz.cell_new("B2_gc")
+        c2 = zz.cell_new("C2_gc")
+        zz.link_make(a2, b2, "+d.inside")
+        zz.link_make(b2, c2, "+d.contents")
+        # Expected: A2, (A2.contents - none), (A2.insides - B2)
+        # -> then B2, (B2.contents - C2), (B2.insides - none)
+        # -> then C2 (from B2's contents, recursed), (C2.contents - none), (C2.insides - none)
+        self.assertEqual(zz.get_contained(a2), [a2, b2, c2])
+
+        # Test Case 3: +d.contents item IS a container head
+        # A --(+d.inside)--> B
+        # B --(+d.contents)--> C_HEAD
+        # C_HEAD --(-d.inside)--> DUMMY (C_HEAD is a container head)
+        a3 = zz.cell_new("A3_gc")
+        b3 = zz.cell_new("B3_gc")
+        c3_head = zz.cell_new("C3_head_gc")
+        d3_dummy = zz.cell_new("D3_dummy_gc")
+        zz.link_make(a3, b3, "+d.inside")
+        zz.link_make(b3, c3_head, "+d.contents")
+        zz.link_make(c3_head, d3_dummy, "-d.inside") # C3_head is a container head
+        # Expected: A3, (A3.contents - none), (A3.insides - B3)
+        # -> then B3, (B3.contents - C3_HEAD)
+        #    C3_HEAD is a head, so it's added to output_list if not globally visited, but not recursed from here.
+        #    (B3.insides - none)
+        self.assertEqual(zz.get_contained(a3), [a3, b3, c3_head])
+
+        # Test Case 4: Loop in +d.inside chain
+        # A --(+d.inside)--> B --(+d.inside)--> A
+        a4 = zz.cell_new("A4_gc")
+        b4 = zz.cell_new("B4_gc")
+        zz.link_make(a4, b4, "+d.inside")
+        zz.link_make(b4, a4, "+d.inside") # Loop
+        # Expected: [A4, B4] (globally_visited_for_get_contained set should prevent infinite loop)
+        # Order: A4, (A4.contents), (A4.insides -> B4)
+        # -> B4, (B4.contents), (B4.insides -> A4 - already visited, stops this path of recursion)
+        self.assertEqual(sorted(zz.get_contained(a4)), sorted([a4, b4]))
+
+
+        # Test Case 5: Loop in +d.contents chain (item not a container head)
+        # A --(+d.contents)--> B --(+d.contents)--> A
+        a5 = zz.cell_new("A5_gc")
+        b5 = zz.cell_new("B5_gc")
+        zz.link_make(a5, b5, "+d.contents")
+        zz.link_make(b5, a5, "+d.contents") # Loop
+        # Expected: [A5, B5]
+        # Order: A5, (A5.contents -> B5)
+        # -> B5, (B5.contents -> A5 - already visited, stops this path of recursion for contents)
+        # (A5.insides - none)
+        self.assertEqual(sorted(zz.get_contained(a5)), sorted([a5, b5]))
+
+        # Test Case 6: More complex nesting
+        # R ---+i---> L1I1
+        #   |
+        #   +---+c---> L1C2 (content of R, not head)
+        #
+        # L1I1 ---+c---> L1C1 (content of L1I1, not head)
+        #      |
+        #      +---+i---> L2I1 (inside of L1I1)
+        #
+        # L2I1 ---+c---> L2C1_HEAD (content of L2I1, is a head)
+        #      |
+        #      +---+c---> L2C2      (content of L2I1, not head)
+
+        r  = zz.cell_new("R_gc")
+        l1i1 = zz.cell_new("L1I1_gc")
+        l1c2 = zz.cell_new("L1C2_gc") # content of R
+        
+        zz.link_make(r, l1i1, "+d.inside")
+        zz.link_make(r, l1c2, "+d.contents")
+
+        l1c1 = zz.cell_new("L1C1_gc") # content of l1i1
+        l2i1 = zz.cell_new("L2I1_gc") # inside of l1i1
+        zz.link_make(l1i1, l1c1, "+d.contents")
+        zz.link_make(l1i1, l2i1, "+d.inside")
+
+        l2c1_head = zz.cell_new("L2C1H_gc")
+        l2c2      = zz.cell_new("L2C2_gc")
+        dummy     = zz.cell_new("Dummy_gc_for_head")
+        zz.link_make(l2i1, l2c1_head, "+d.contents")
+        zz.link_make(l2c1_head, dummy, "-d.inside") # l2c1_head is a container head
+        zz.link_make(l2i1, l2c2, "+d.contents")
+        
+        # Expected based on current Python _collect_recursive(cell):
+        # 1. _collect_recursive(R):
+        #    output_list.append(R) globally_visited.add(R)
+        #    R.contents: L1C2. Not head. Recurse _collect_recursive(L1C2)
+        #      L1C2: output_list.append(L1C2), globally_visited.add(L1C2). L1C2.contents/insides are null. Returns.
+        #    R.insides: L1I1. Recurse _collect_recursive(L1I1)
+        #      L1I1: output_list.append(L1I1), globally_visited.add(L1I1)
+        #      L1I1.contents: L1C1. Not head. Recurse _collect_recursive(L1C1)
+        #        L1C1: output_list.append(L1C1), globally_visited.add(L1C1). Null contents/insides. Returns.
+        #      (L1I1.contents chain continues for L1C1: next is None)
+        #      L1I1.insides: L2I1. Recurse _collect_recursive(L2I1)
+        #        L2I1: output_list.append(L2I1), globally_visited.add(L2I1)
+        #        L2I1.contents: L2C1_HEAD. Is head. Add if not visited. output_list.append(L2C1_HEAD), globally_visited.add(L2C1_HEAD). No recurse on its contents from here.
+        #        L2I1.contents: L2C2. Not head. Recurse _collect_recursive(L2C2)
+        #          L2C2: output_list.append(L2C2), globally_visited.add(L2C2). Null contents/insides. Returns.
+        #        (L2I1.contents chain continues for L2C2: next is None)
+        #        L2I1.insides: Null. Returns.
+        #      (L1I1.insides chain continues for L2I1: next is None)
+        #      Returns from L1I1.
+        #    (R.insides chain continues for L1I1: next is None)
+        #    Returns from R.
+        # Final expected order: [r, l1c2, l1i1, l1c1, l2i1, l2c1_head, l2c2]
+        self.assertEqual(zz.get_contained(r), [r, l1c2, l1i1, l1c1, l2i1, l2c1_head, l2c2])
+
 
 if __name__ == '__main__':
     unittest.main()

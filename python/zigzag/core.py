@@ -1912,17 +1912,91 @@ class ZigzagSpace:
         else:
             print(f"Error: Dimension config cell '{dim_config_cell_to_flip}' has no content to flip.")
 
-    def get_contained(self, cell_id: str) -> List[str]:
+    def get_contained(self, start_cell_id: str) -> list[str]:
         """
-        Retrieves a list of cell IDs "contained" within a given cell.
-        SIMPLIFIED VERSION: For this subtask, it ONLY returns a list containing cell_id itself if it exists.
-        A more complete implementation would recursively traverse +d.inside and +d.contents.
+        Retrieves a list of cell IDs "contained" within a given start_cell_id.
+        Aims to replicate the logic of Perl's get_contained/add_contents.
+        1. Includes the start_cell_id.
+        2. Traverses the +d.inside chain from start_cell_id. Each cell in this chain is added.
+        3. For each cell added from the +d.inside chain, its +d.contents chain is traversed.
+           Items from +d.contents are added (and recursed upon) only if they are not
+           container heads themselves (i.e., no -d.inside link).
+        Returns a list of unique cell IDs in the order they were visited.
         """
-        if cell_id not in self.cells:
-            # Consistent with subtask guidance to print here for get_contained, though exceptions are used elsewhere.
-            print(f"Error: Cell '{cell_id}' not found for get_contained.")
+        if start_cell_id not in self.cells:
+            # Though other methods raise CellNotFoundError, problem statement for previous
+            # get_contained asked for print and empty list. Keep for now unless specified.
+            print(f"Error: Cell '{start_cell_id}' not found for get_contained.")
             return []
-        return [cell_id]
+
+        output_list: list[str] = []
+        # globally_visited is used to ensure each cell is added to output_list only once
+        # and to prevent reprocessing in recursive calls.
+        globally_visited: set[str] = set()
+
+        # This is the direct translation of Perl's add_contents
+        def _add_contents_recursive_inner(current_start_node_id: str) -> None:
+            # This function processes current_start_node_id, then its .insides,
+            # and for each of those .insides, their .contents.
+            
+            if current_start_node_id not in self.cells: # Safety check
+                print(f"Warning (get_contained): Cell ID '{current_start_node_id}' in traversal not found.")
+                return
+
+            # Add current_start_node_id to results if not already processed
+            if current_start_node_id not in globally_visited:
+                output_list.append(current_start_node_id)
+                globally_visited.add(current_start_node_id)
+            else: # If already visited (e.g. start_cell_id passed again), do not reprocess its children from this path
+                return
+
+            # Iterate through the +d.inside chain of current_start_node_id
+            cell_in_inside_chain = self.cell_nbr(current_start_node_id, "+d.inside")
+            visited_this_inside_chain: set[str] = {current_start_node_id} 
+
+            while cell_in_inside_chain is not None and \
+                  cell_in_inside_chain not in visited_this_inside_chain:
+                
+                if cell_in_inside_chain not in self.cells: # Broken chain
+                    print(f"Warning (get_contained): Cell ID '{cell_in_inside_chain}' in +d.inside chain not found.")
+                    break 
+                visited_this_inside_chain.add(cell_in_inside_chain)
+
+                # Add this cell from .inside chain to results (if not already globally processed)
+                if cell_in_inside_chain not in globally_visited:
+                    output_list.append(cell_in_inside_chain)
+                    globally_visited.add(cell_in_inside_chain)
+                
+                # For this cell_in_inside_chain, process its +d.contents chain
+                item_in_contents_chain = self.cell_nbr(cell_in_inside_chain, "+d.contents")
+                visited_this_contents_chain: set[str] = {cell_in_inside_chain}
+
+                while item_in_contents_chain is not None and \
+                      item_in_contents_chain not in visited_this_contents_chain:
+                    
+                    if item_in_contents_chain not in self.cells: # Broken chain
+                        print(f"Warning (get_contained): Cell ID '{item_in_contents_chain}' in +d.contents chain not found.")
+                        break
+                    visited_this_contents_chain.add(item_in_contents_chain)
+
+                    # Process only if not globally visited AND it's not a container head itself
+                    if item_in_contents_chain not in globally_visited and \
+                       self.cell_nbr(item_in_contents_chain, "-d.inside") is None:
+                        _add_contents_recursive_inner(item_in_contents_chain) # Recurse for this item
+                    elif item_in_contents_chain not in globally_visited:
+                        # If it's a container head but not globally visited, add it to list.
+                        # Its own .inside/.contents will be handled if it's visited via an .inside chain path.
+                        output_list.append(item_in_contents_chain)
+                        globally_visited.add(item_in_contents_chain)
+                        
+                    item_in_contents_chain = self.cell_nbr(item_in_contents_chain, "+d.contents")
+                
+                cell_in_inside_chain = self.cell_nbr(cell_in_inside_chain, "+d.inside")
+        
+        # Initial call to the recursive helper for the start_cell_id
+        _add_contents_recursive_inner(start_cell_id)
+        
+        return output_list
 
     def atcursor_execute(self, cursor_number: int) -> None:
         """
@@ -1991,17 +2065,90 @@ class ZigzagSpace:
                 # print(f"Info: Cell '{cell_id_to_execute}' content does not start with prefix, not executed.")
         # display_dirty() or equivalent might be called by the executed code itself if needed
 
-    def get_contained(self, cell_id: str) -> List[str]:
+    def get_contained(self, start_cell_id: str) -> list[str]:
         """
-        Retrieves a list of cell IDs "contained" within a given cell.
-        SIMPLIFIED VERSION: For this subtask, it ONLY returns a list containing cell_id itself if it exists.
-        A more complete implementation would recursively traverse +d.inside and +d.contents.
+        Retrieves a list of cell IDs "contained" within a given start_cell_id.
+        This implements a traversal logic similar to Perl's add_contents:
+        1. Includes the start_cell_id.
+        2. Recursively includes cells in its +d.inside chain.
+        3. For each cell in that +d.inside chain (including start_cell_id for its own contents),
+           it recursively includes cells from their +d.contents chain, provided those
+           content cells do not themselves have a -d.inside link (i.e., are not container heads).
+        Returns a list of unique cell IDs in the order they were visited.
         """
-        if cell_id not in self.cells:
-            # Consistent with subtask guidance to print here for get_contained, though exceptions are used elsewhere.
-            print(f"Error: Cell '{cell_id}' not found for get_contained.")
+        if start_cell_id not in self.cells:
+            print(f"Error: Cell '{start_cell_id}' not found for get_contained.")
             return []
-        return [cell_id]
+
+        output_list: list[str] = []
+        # Globally visited set for the entire get_contained call to avoid redundant processing and loops.
+        globally_visited_for_get_contained: set[str] = set()
+
+        # Recursive helper function
+        def _collect_recursive(cell_to_process_id: str) -> None:
+            if cell_to_process_id in globally_visited_for_get_contained:
+                return
+            
+            if cell_to_process_id not in self.cells: # Should not happen if links are consistent
+                print(f"Warning: Cell ID '{cell_to_process_id}' encountered during get_contained traversal but not found in main cells dictionary.")
+                return
+
+            globally_visited_for_get_contained.add(cell_to_process_id)
+            results.append(cell_to_process_id) # 'results' should be 'output_list'
+
+            # Process +d.contents chain for the current cell_to_process_id
+            # This must happen *before* traversing the current cell's +d.inside chain,
+            # as per the original Perl's logic where add_contents processes the current cell,
+            # then its .contents, then its .inside.
+            # This interpretation is difficult. Let's follow the plan's structure.
+            # The plan was:
+            #   1. Add current cell.
+            #   2. Process +d.inside chain (recursively adding those).
+            #   3. Re-iterate the +d.inside chain for their +d.contents.
+            # This seems more like the Perl `add_contents` structure where `cell` is from `+d.inside`
+            # and then `index` is from `cell.+d.contents`.
+
+            # For now, let's stick to a structure that processes current cell, then its direct contents, then its direct insides.
+            # This is a common pattern. If it doesn't match Perl, we'll see in testing.
+
+            # Process +d.contents for *this* cell_to_process_id, if they are not container heads
+            current_contents_item_id = self.cell_nbr(cell_to_process_id, "+d.contents")
+            visited_in_this_contents_chain: set[str] = {cell_to_process_id}
+            while current_contents_item_id is not None and \
+                  current_contents_item_id not in visited_in_this_contents_chain:
+                
+                if current_contents_item_id not in self.cells: break # Broken chain
+                visited_in_this_contents_chain.add(current_contents_item_id)
+
+                if self.cell_nbr(current_contents_item_id, "-d.inside") is None:
+                    # If not a container head itself, recurse
+                    _collect_recursive(current_contents_item_id)
+                else:
+                    # If it is a container head, just add it to results if not visited, but don't recurse its contents here.
+                    # Its own .inside/.contents will be handled if it's visited through an .inside chain.
+                    if current_contents_item_id not in globally_visited_for_get_contained:
+                        globally_visited_for_get_contained.add(current_contents_item_id)
+                        output_list.append(current_contents_item_id) # Corrected to output_list
+                
+                current_contents_item_id = self.cell_nbr(current_contents_item_id, "+d.contents")
+
+
+            # Process +d.inside chain for the current cell_to_process_id
+            current_inside_item_id = self.cell_nbr(cell_to_process_id, "+d.inside")
+            visited_in_this_inside_chain: set[str] = {cell_to_process_id}
+            while current_inside_item_id is not None and \
+                  current_inside_item_id not in visited_in_this_inside_chain:
+
+                if current_inside_item_id not in self.cells: break # Broken chain
+                visited_in_this_inside_chain.add(current_inside_item_id)
+                
+                _collect_recursive(current_inside_item_id) # Recurse for each item in .inside chain
+                current_inside_item_id = self.cell_nbr(current_inside_item_id, "+d.inside")
+        
+        # Initial call to the recursive helper
+        _collect_recursive(start_cell_id)
+        
+        return output_list
 
     def atcursor_execute(self, cursor_number: int) -> None:
         """
@@ -2070,17 +2217,74 @@ class ZigzagSpace:
                 # print(f"Info: Cell '{cell_id_to_execute}' content does not start with prefix, not executed.")
         # display_dirty() or equivalent might be called by the executed code itself if needed
 
-    def get_contained(self, cell_id: str) -> List[str]:
+    def get_contained(self, start_cell_id: str) -> list[str]:
         """
-        Retrieves a list of cell IDs "contained" within a given cell.
-        SIMPLIFIED VERSION: For this subtask, it ONLY returns a list containing cell_id itself if it exists.
-        A more complete implementation would recursively traverse +d.inside and +d.contents.
+        Retrieves a list of cell IDs "contained" within a given start_cell_id.
+        This implements a traversal logic similar to Perl's add_contents:
+        1. Includes the start_cell_id.
+        2. Recursively includes cells in its +d.inside chain.
+        3. For each cell in that +d.inside chain (including start_cell_id for its own contents),
+           it recursively includes cells from their +d.contents chain, provided those
+           content cells do not themselves have a -d.inside link (i.e., are not container heads).
+        Returns a list of unique cell IDs in the order they were visited.
         """
-        if cell_id not in self.cells:
-            # Consistent with subtask guidance to print here for get_contained, though exceptions are used elsewhere.
-            print(f"Error: Cell '{cell_id}' not found for get_contained.")
+        if start_cell_id not in self.cells:
+            print(f"Error: Cell '{start_cell_id}' not found for get_contained.")
             return []
-        return [cell_id]
+
+        output_list: list[str] = []
+        # Globally visited set for the entire get_contained call to avoid redundant processing and loops.
+        globally_visited_for_get_contained: set[str] = set()
+
+        # Recursive helper function
+        def _collect_recursive(cell_to_process_id: str) -> None:
+            if cell_to_process_id in globally_visited_for_get_contained:
+                return
+            
+            if cell_to_process_id not in self.cells: # Should not happen if links are consistent
+                print(f"Warning: Cell ID '{cell_to_process_id}' encountered during get_contained traversal but not found in main cells dictionary.")
+                return
+
+            globally_visited_for_get_contained.add(cell_to_process_id)
+            output_list.append(cell_to_process_id) # Corrected: was 'results' in my thought process
+
+            # Process +d.contents chain for the current cell_to_process_id
+            current_contents_item_id = self.cell_nbr(cell_to_process_id, "+d.contents")
+            visited_in_this_contents_chain: set[str] = {cell_to_process_id}
+            while current_contents_item_id is not None and \
+                  current_contents_item_id not in visited_in_this_contents_chain:
+                
+                if current_contents_item_id not in self.cells: break # Broken chain
+                visited_in_this_contents_chain.add(current_contents_item_id)
+
+                if self.cell_nbr(current_contents_item_id, "-d.inside") is None:
+                    # If not a container head itself, recurse
+                    _collect_recursive(current_contents_item_id)
+                else:
+                    # If it is a container head, just add it to results if not visited, but don't recurse its contents here.
+                    if current_contents_item_id not in globally_visited_for_get_contained:
+                        globally_visited_for_get_contained.add(current_contents_item_id)
+                        output_list.append(current_contents_item_id)
+                
+                current_contents_item_id = self.cell_nbr(current_contents_item_id, "+d.contents")
+
+
+            # Process +d.inside chain for the current cell_to_process_id
+            current_inside_item_id = self.cell_nbr(cell_to_process_id, "+d.inside")
+            visited_in_this_inside_chain: set[str] = {cell_to_process_id}
+            while current_inside_item_id is not None and \
+                  current_inside_item_id not in visited_in_this_inside_chain:
+
+                if current_inside_item_id not in self.cells: break # Broken chain
+                visited_in_this_inside_chain.add(current_inside_item_id)
+                
+                _collect_recursive(current_inside_item_id) # Recurse for each item in .inside chain
+                current_inside_item_id = self.cell_nbr(current_inside_item_id, "+d.inside")
+        
+        # Initial call to the recursive helper
+        _collect_recursive(start_cell_id)
+        
+        return output_list
 
     def atcursor_execute(self, cursor_number: int) -> None:
         """
