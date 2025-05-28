@@ -1,22 +1,13 @@
 import json
 import os
-from typing import Dict, Any, Set, Optional # Import Set and Optional
-from ..zigzag.core import Cell, ZigzagSpace # Adjusted import
+from typing import Dict, Any, Optional
+from ..zigzag.core import Cell, ZigzagSpace
 
 # Module-level constants
-DEFAULT_ZIGZAG_FILENAME: str = "zigzag.zz"
 BACKUP_FILE_SUFFIX: str = ".bak"
+DEFAULT_ZIGZAG_FILENAME: str = "zigzag.zz"
 
-# INITIAL_GEOMETRY is defined in this file, so no need for a relative import from self.
-# from .persistence import INITIAL_GEOMETRY # This line can be removed or commented out.
-
-# The INITIAL_GEOMETRY dictionary definition from the previous subtask should be here.
-# For brevity, I'll assume it's present as per the previous steps.
-# If it was in a separate file and imported, the import would be:
-# from .initial_geometry_module import INITIAL_GEOMETRY
-# But since it's defined in this file directly (as per subtask 3), no import needed for it here.
-
-INITIAL_GEOMETRY = {
+INITIAL_GEOMETRY: dict[int | str, str | int] = {
     0: "Home",
     "0-d.1": 99,
     "0+d.2": 30,
@@ -274,11 +265,6 @@ def slice_open(zz_space: ZigzagSpace, filename: Optional[str] = None, storage_ty
     # Ensure filename is now a string for os.path.exists and other operations
     # (it will be if it was None or provided as a string)
 
-    if storage_type == 'json' and os.path.exists(filename):
-        try:
-            with open(filename, 'r') as f:
-    Otherwise, it populates the space with initial geometry.
-    """
     if storage_type == 'json' and os.path.exists(filename):
         try:
             with open(filename, 'r') as f:
