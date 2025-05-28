@@ -1,8 +1,8 @@
-# Xanadu(R) Zigzag(tm) Hyperstructure Kit, $Revision: 0.70 $
+# Xanadu(R) Zigzag(tm) Hyperstructure Kit, $Revision: 0.71 $
 #
 # Designed by Ted Nelson
 # Programmed by Andrew Pam ("xanni") and Bek Oberin ("gossamer")
-# Copyright (c) 1997-1999 Project Xanadu
+# Copyright (c) 1997-2025 Project Xanadu
 #
 # This is only a partial implementation, with only a few structure and view
 # operations; however, they are enough to allow you to create, view and explore
@@ -29,9 +29,12 @@
 # ===================== Change Log
 #
 # Inital Zigzag implementation
-# $Id: Zigzag.pm,v 0.70 1999/05/14 13:43:21 xanni Exp $
+# $Id: Zigzag.pm,v 0.71 2025/05/29 00:57:00 xanni Exp $
 #
 # $Log: Zigzag.pm,v $
+# Revision 0.71  2025/05/29 00:57:00  xanni
+# * Added unit tests and fixed bug in is_clone()
+#
 # Revision 0.70  1999/05/14 13:43:21  xanni
 # * Imported atcursor_edit from front end
 # * Implemented dimension_home()
@@ -171,8 +174,7 @@ use File::Copy;
 
 # Define constants
 use vars qw($VERSION);
-#($VERSION) = q$Revision: 0.70 $ =~ /([\d\.]+)/;
-$VERSION = do { my @r = (q$Revision: 0.70 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r }; # must be all one line, for MakeMaker
+$VERSION = do { my @r = (q$Revision: 0.71 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r }; # must be all one line, for MakeMaker
 my $FALSE = 0;
 my $TRUE = !$FALSE;
 my $CURSOR_HOME = 10;           # NOTE!  This assumes it stays fixed!
@@ -188,9 +190,9 @@ use vars qw($Command_Count $Hcells $Vcells $Input_Buffer);
 
 #my $Input_Buffer;               # Cell number entered from the keyboard
 #my $Command_Count;              # Counts commands between DB syncs
-my @Filename;			# Array of filenames
-my @DB_Ref;			# Array of database references
-my @Hash_Ref;			# Array of hash references
+our @Filename;			# Array of filenames
+our @DB_Ref;			# Array of database references
+our @Hash_Ref;			# Array of hash references
 #my $Hcells;			 # Horizontal cells per window
 #my $Vcells;			 # Vertical cells per window
 
@@ -524,7 +526,7 @@ sub is_clone($)
 {
   my $cell = shift;
   return (defined(cell_nbr($cell, "-d.clone")) ||
-	  defined(cell_nbr($cell, "d.clone")));
+	  defined(cell_nbr($cell, "+d.clone")));
 }
 
 sub is_selected($)
