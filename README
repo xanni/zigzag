@@ -3,7 +3,7 @@
 To run the included unit tests, navigate to the root directory of the repository
 and execute the following command:
 
-    prove -I. -v
+    prove -v
 
 This will run the test suite and report the results.
 
