@@ -7,24 +7,18 @@ use Test::More tests => 22;
 BEGIN { use_ok('Zigzag'); }
 
 # Setup data for all tests in slice 0
-# Note: is_essential tests do not require data setup in @Zigzag::Hash_Ref
-# as they rely on constants defined in Zigzag.pm (CURSOR_HOME, etc.)
-# and direct comparison with cell IDs.
 @Zigzag::Hash_Ref = ({}); 
 my $test_slice = $Zigzag::Hash_Ref[0];
-# %{$test_slice} = Zigzag::initial_geometry(); # Load initial geometry
 
 subtest 'reverse_sign' => sub {
-    %$test_slice = Zigzag::initial_geometry(); # Initialize it
     plan tests => 2;
     is( Zigzag::reverse_sign('+d.1'), '-d.1', 'positive to negative');
     is( Zigzag::reverse_sign('-d.test'), '+d.test', 'negative to positive');
 };
 
 subtest 'is_cursor' => sub {
-    %$test_slice = Zigzag::initial_geometry(); # Initialize it
+    %$test_slice = Zigzag::initial_geometry();
 
-    # --- Setup for is_cursor tests (now using $test_slice) ---
     $test_slice->{'100'} = 'Cell 100 (cursor)';
     $test_slice->{'101'} = 'Cell 101 (target for cursor link)';
     $test_slice->{'102'} = 'Cell 102 (not a cursor)';
@@ -36,9 +30,8 @@ subtest 'is_cursor' => sub {
 };
 
 subtest 'is_clone' => sub {
-    %$test_slice = Zigzag::initial_geometry(); # Initialize it
+    %$test_slice = Zigzag::initial_geometry();
 
-    # --- Setup for is_clone tests (now using $test_slice) ---
     $test_slice->{'200'} = 'Cell 200 (clone via -d.clone)';
     $test_slice->{'299'} = 'Helper cell for 200-d.clone link'; 
     $test_slice->{'200-d.clone'} = '299'; $test_slice->{'299+d.clone'} = '200'; 
@@ -56,7 +49,8 @@ subtest 'is_clone' => sub {
 };
 
 subtest 'is_essential' => sub {
-    %$test_slice = Zigzag::initial_geometry(); # Initialize it
+    %$test_slice = Zigzag::initial_geometry();
+
     plan tests => 5;
     # Essential cell IDs are 0, $CURSOR_HOME (10), $SELECT_HOME (21), $DELETE_HOME (99)
     # These tests rely on initial_geometry
@@ -68,9 +62,8 @@ subtest 'is_essential' => sub {
 };
 
 subtest 'get_accursed' => sub {
-    %$test_slice = Zigzag::initial_geometry(); # Initialize it
+    %$test_slice = Zigzag::initial_geometry();
 
-    # --- Setup for get_accursed tests (now using $test_slice) ---
     # get_cursor(0) should return cell 11 (CURSOR_HOME +d.2 from initial_geometry)
     # We will make cell 111 the accursed cell for cursor 0 (cell 11)
     $test_slice->{'111'} = 'Cell 111 (accursed for cursor 0/cell 11)';
@@ -84,52 +77,32 @@ subtest 'get_accursed' => sub {
 };
 
 subtest 'get_active_selection' => sub {
-    %$test_slice = Zigzag::initial_geometry(); # Initialize it
+    %$test_slice = Zigzag::initial_geometry();
 
-    # --- Setup for get_active_selection, get_selection, get_which_selection (using $test_slice) ---
     my $SELECT_HOME = 21; # From Zigzag.pm constants (already in initial_geometry)
 
     # Define new cells for selections
     $test_slice->{'22'}  = 'Selection Head 1'; 
     $test_slice->{'400'} = 'Cell 400 for active selection';
     $test_slice->{'401'} = 'Cell 401 for active selection';
-    $test_slice->{'402'} = 'Cell 402 for secondary selection';
 
     # Active selection (selection 0, around $SELECT_HOME)
     $test_slice->{"${SELECT_HOME}+d.mark"} = '400'; $test_slice->{'400-d.mark'} = $SELECT_HOME;
     $test_slice->{'400+d.mark'} = '401';           $test_slice->{'401-d.mark'} = '400';
     $test_slice->{'401+d.mark'} = $SELECT_HOME;    $test_slice->{"${SELECT_HOME}-d.mark"} = '401'; # Cycle complete
-
-    # Secondary selection (selection 1, head cell 22)
-    # Link new selection head 22 into the list of selections (21 <-> 22)
-    $test_slice->{"${SELECT_HOME}+d.2"} = '22';    $test_slice->{'22-d.2'} = $SELECT_HOME;
-    $test_slice->{'22+d.2'} = $SELECT_HOME;       # Cycle selection heads (21 is already -d.2 from 22 via initial_geometry if not overwritten)
-    $test_slice->{"${SELECT_HOME}-d.2"} = '22';   # Explicitly make 21 point back to 22 in -d.2
-
-    # Link cells to selection head 22
-    $test_slice->{'22+d.mark'} = '402';            $test_slice->{'402-d.mark'} = '22';
-    $test_slice->{'402+d.mark'} = '22';            $test_slice->{'22-d.mark'} = '402'; # Cycle complete
 
     plan tests => 1;
     is_deeply( [Zigzag::get_active_selection()], ['400', '401', $SELECT_HOME], 'returns cells 400, 401, and 21');
 };
 
 subtest 'get_selection' => sub {
-    %$test_slice = Zigzag::initial_geometry(); # Initialize it
+    %$test_slice = Zigzag::initial_geometry();
 
-    # --- Setup for get_active_selection, get_selection, get_which_selection (using $test_slice) ---
     my $SELECT_HOME = 21; # From Zigzag.pm constants (already in initial_geometry)
 
     # Define new cells for selections
     $test_slice->{'22'}  = 'Selection Head 1'; 
-    $test_slice->{'400'} = 'Cell 400 for active selection';
-    $test_slice->{'401'} = 'Cell 401 for active selection';
     $test_slice->{'402'} = 'Cell 402 for secondary selection';
-
-    # Active selection (selection 0, around $SELECT_HOME)
-    $test_slice->{"${SELECT_HOME}+d.mark"} = '400'; $test_slice->{'400-d.mark'} = $SELECT_HOME;
-    $test_slice->{'400+d.mark'} = '401';           $test_slice->{'401-d.mark'} = '400';
-    $test_slice->{'401+d.mark'} = $SELECT_HOME;    $test_slice->{"${SELECT_HOME}-d.mark"} = '401'; # Cycle complete
 
     # Secondary selection (selection 1, head cell 22)
     # Link new selection head 22 into the list of selections (21 <-> 22)
@@ -146,9 +119,8 @@ subtest 'get_selection' => sub {
 };
 
 subtest 'get_which_selection' => sub {
-    %$test_slice = Zigzag::initial_geometry(); # Initialize it
+    %$test_slice = Zigzag::initial_geometry();
 
-    # --- Setup for get_active_selection, get_selection, get_which_selection (using $test_slice) ---
     my $SELECT_HOME = 21; # From Zigzag.pm constants (already in initial_geometry)
 
     # Define new cells for selections
@@ -179,9 +151,8 @@ subtest 'get_which_selection' => sub {
 };
 
 subtest 'get_lastcell' => sub {
-    %$test_slice = Zigzag::initial_geometry(); # Initialize it
+    %$test_slice = Zigzag::initial_geometry();
 
-    # --- Setup for get_lastcell tests (now using $test_slice) ---
     # Linear chain: 500 <-> 501 <-> 502 in d.testchain
     $test_slice->{'500'} = 'Cell 500 (start of linear chain)';
     $test_slice->{'501'} = 'Cell 501 (middle of linear chain)';
@@ -207,9 +178,8 @@ subtest 'get_lastcell' => sub {
 };
 
 subtest 'get_distance' => sub {
-    %$test_slice = Zigzag::initial_geometry(); # Initialize it
+    %$test_slice = Zigzag::initial_geometry();
 
-    # --- Setup for get_distance tests (now using $test_slice) ---
     $test_slice->{'700'} = 'Cell 700 for get_distance';
     $test_slice->{'701'} = 'Cell 701 for get_distance';
     $test_slice->{'702'} = 'Cell 702 for get_distance';
@@ -229,9 +199,8 @@ subtest 'get_distance' => sub {
 };
 
 subtest 'get_outline_parent' => sub {
-    %$test_slice = Zigzag::initial_geometry(); # Initialize it
+    %$test_slice = Zigzag::initial_geometry();
 
-    # --- Setup for get_outline_parent tests (now using $test_slice) ---
     $test_slice->{'800'} = 'Cell 800 (child for outline parent)';
     $test_slice->{'801'} = 'Cell 801 (parent for outline parent)';
     $test_slice->{'802'} = 'Cell 802 (intermediate for 800-d.2)';
@@ -257,9 +226,8 @@ subtest 'get_outline_parent' => sub {
 };
 
 subtest 'get_cell_contents' => sub {
-    %$test_slice = Zigzag::initial_geometry(); # Initialize it
+    %$test_slice = Zigzag::initial_geometry();
 
-    # --- Setup for get_cell_contents tests (now using $test_slice) ---
     $test_slice->{'850'} = 'Direct content for 850';
     $test_slice->{'851'} = 'Cell 851 (clone of 852)'; # This content is just a note
     $test_slice->{'852'} = 'Content from original cell 852';
@@ -279,9 +247,8 @@ subtest 'get_cell_contents' => sub {
 };
 
 subtest 'get_cursor' => sub {
-    %$test_slice = Zigzag::initial_geometry(); # Initialize it
+    %$test_slice = Zigzag::initial_geometry();
 
-    # --- Setup for get_cursor tests (now using $test_slice) ---
     # initial_geometry provides cursor 0 (11) and cursor 1 (16)
     # $CURSOR_HOME (10) -> 11 (cursor 0) -> 16 (cursor 1)
     $test_slice->{'900'} = 'Test Cursor 2';
@@ -301,7 +268,7 @@ subtest 'get_cursor' => sub {
 };
 
 subtest 'get_dimension' => sub {
-    %$test_slice = Zigzag::initial_geometry(); # Initialize it
+    %$test_slice = Zigzag::initial_geometry();
     plan tests => 7;
     my $cursor_cell_for_dim_test = Zigzag::get_cursor(0); # Should be 11
     # Expected dimensions based on initial_geometry for cursor 0 (cell 11):
@@ -322,9 +289,8 @@ subtest 'get_dimension' => sub {
 };
 
 subtest 'get_links_to' => sub {
-    %$test_slice = Zigzag::initial_geometry(); # Initialize it
+    %$test_slice = Zigzag::initial_geometry();
 
-    # --- Setup for get_links_to tests (now using $test_slice) ---
     # Define target and source cells
     $test_slice->{'950'} = 'Target cell for links';
     $test_slice->{'951'} = 'Source cell 1';
@@ -346,7 +312,6 @@ subtest 'get_links_to' => sub {
 };
 
 subtest 'wordbreak' => sub {
-    %$test_slice = Zigzag::initial_geometry(); # Initialize it
     plan tests => 4;
     is( Zigzag::wordbreak("short string", 20), "short string", "string shorter than limit");
     is( Zigzag::wordbreak("long string with spaces", 10), "long", "breaks at space before limit");
@@ -355,7 +320,6 @@ subtest 'wordbreak' => sub {
 };
 
 subtest 'dimension_is_essential' => sub {
-    %$test_slice = Zigzag::initial_geometry(); # Initialize it
     plan tests => 10;
     ok( Zigzag::dimension_is_essential('d.1'), "d.1 is essential");
     ok( Zigzag::dimension_is_essential('+d.2'), "+d.2 is essential");
@@ -371,7 +335,7 @@ subtest 'dimension_is_essential' => sub {
 
 # --- Tests for cell_new ---
 subtest 'cell_new' => sub {
-    %$test_slice = Zigzag::initial_geometry(); # Initialize it
+    %$test_slice = Zigzag::initial_geometry();
     plan tests => 14;
 
     # Test Case 1: Create a new cell with default content.
@@ -401,10 +365,6 @@ subtest 'cell_new' => sub {
     my $recyclable_cell_id = '3010'; # Arbitrary high number for recycle test
     $test_slice->{$recyclable_cell_id} = "Recyclable";
 
-    # Save original DELETE_HOME links to restore later, as initial_geometry sets them up.
-    my $orig_dh_minus_d2 = $test_slice->{"${DELETE_HOME}-d.2"};
-    my $orig_dh_plus_d2 = $test_slice->{"${DELETE_HOME}+d.2"};
-
     # Put $recyclable_cell_id onto the recycle pile (making it the only item)
     $test_slice->{"${DELETE_HOME}-d.2"} = $recyclable_cell_id; # DELETE_HOME points to it
     $test_slice->{"${recyclable_cell_id}+d.2"} = $DELETE_HOME; # It points back to DELETE_HOME
@@ -418,26 +378,11 @@ subtest 'cell_new' => sub {
     is($test_slice->{"${DELETE_HOME}-d.2"}, $DELETE_HOME, "4.3: DELETE_HOME -d.2 link updated (points to self as pile is empty)");
     is($test_slice->{"${recycled_cell_id_actual}+d.2"}, undef, "4.4: Recycled cell's +d.2 link is removed");
     is($test_slice->{"${recycled_cell_id_actual}-d.2"}, undef, "4.5: Recycled cell's -d.2 link is removed");
-
-    # Cleanup for recycle test:
-    # Restore DELETE_HOME's original d.2 links
-    $test_slice->{"${DELETE_HOME}-d.2"} = $orig_dh_minus_d2;
-    $test_slice->{"${DELETE_HOME}+d.2"} = $orig_dh_plus_d2;
-    # Delete the test cells created if they weren't recycled, or if their content needs resetting
-    delete $test_slice->{$new_cell_id_default}; # Content was its own ID
-    delete $test_slice->{$new_cell_id_content};
-    delete $test_slice->{$cell_id1_multi};
-    delete $test_slice->{$cell_id2_multi};
-    # $recyclable_cell_id ('3010') was reused, its content changed, and links cleared.
-    # We can delete it or leave it with its new content for this test scope.
-    # For strictness, delete it if no other test expects it.
-    delete $test_slice->{$recyclable_cell_id};
-    # Note: 'n' is no longer manually restored. Each subtest gets a fresh 'n' via initial_geometry().
 };
 
 # --- Tests for cell_excise ---
 subtest 'cell_excise' => sub {
-    %$test_slice = Zigzag::initial_geometry(); # Initialize it
+    %$test_slice = Zigzag::initial_geometry();
     plan tests => 17;
 
     my $dim = 'd.testex'; # Common dimension for most tests
@@ -509,7 +454,7 @@ subtest 'cell_excise' => sub {
 
 # --- Setup for link_make tests ---
 subtest 'link_make' => sub {
-    %$test_slice = Zigzag::initial_geometry(); # Initialize it
+    %$test_slice = Zigzag::initial_geometry();
     plan tests => 7; # 2 for success, 5 for die cases
 
     # Test 1: Successful link
@@ -538,10 +483,6 @@ subtest 'link_make' => sub {
     eval { Zigzag::link_make('1000', '1003', '+d.testlink'); }; # 1000 already has +d.testlink to 1001
     like($@, qr/1000 already linked/, "link_make: die when cell1 already linked");
 
-    # Cleanup link from Test 1 for Test 6 clarity - though new dim used in test 6
-    delete $test_slice->{'1000+d.testlink'};
-    delete $test_slice->{'1001-d.testlink'};
-
     # Test 6: Error case: $cell2 already linked in reverse_sign($dir)
     # Per problem: Link '1002' ('X') and '1003' ('B') with '+d.testlink' ('+D').
     # This creates B-D = X. ('1003-d.testlink' = '1002')
@@ -558,7 +499,7 @@ subtest 'link_make' => sub {
 
 # --- Setup for link_break tests ---
 subtest 'link_break' => sub {
-    %$test_slice = Zigzag::initial_geometry(); # Initialize it
+    %$test_slice = Zigzag::initial_geometry();
     plan tests => 12; # 2x2 for success cases, 8 for die cases
 
     # Setup cells for link_break tests
@@ -624,30 +565,4 @@ subtest 'link_break' => sub {
     # Test 10: Error case (2 args): $cell1 has no link in $dir
     eval { Zigzag::link_break('2008', '+d.testbreak_e7'); }; # 2008 is not linked
     like($@, qr/2008 has no link in direction \+d.testbreak_e7/, "link_break(2 args): die when cell1 has no link in dir");
-
-    # Cleanup
-    my @cleanup_dims = (
-        '+d.testbreak_s3', '-d.testbreak_s3', '+d.testbreak_s2', '-d.testbreak_s2',
-        '+d.testbreak_e1', '-d.testbreak_e1', '+d.testbreak_e2', '-d.testbreak_e2',
-        '+d.testbreak_e3', '-d.testbreak_e3', '+d.testbreak_e4', '-d.testbreak_e4',
-        '+d.testbreak_e5', '-d.testbreak_e5', '+d.testbreak_e6', '-d.testbreak_e6',
-        '+d.testbreak_e7', '-d.testbreak_e7'
-    );
-    foreach my $i (0..8) {
-        my $cell_id_num = 2000 + $i;
-        # For cells that might not exist during a test (nonexistent_lb*), skip delete if not in test_slice
-        my $cell_id = $test_slice->{$cell_id_num} ? $cell_id_num : undef; 
-        if (defined $cell_id) {
-            delete $test_slice->{$cell_id};
-            foreach my $dim (@cleanup_dims) {
-                delete $test_slice->{"${cell_id}${dim}"};
-            }
-        }
-    }
-     # Explicitly delete links that might involve non-existent cells if created temporarily by link_make
-    foreach my $cell_id_str ('nonexistent_lb1', 'nonexistent_lb2', 'nonexistent_lb3') {
-        foreach my $dim (@cleanup_dims) {
-            delete $test_slice->{"${cell_id_str}${dim}"};
-        }
-    }
 };
