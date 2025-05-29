@@ -579,10 +579,17 @@ sub dimension_rename($$)
     print STDERR "Renaming dimension $d_orig to $d_new.  Please wait...";
     cell_set($cell, $d_new);
 
-    foreach (@Hash_Ref)
-    {
-      while (my ($key, $value) = each %$_)
-      { $key =~ s/$d_orig$/$d_new/; }
+    foreach my $slice_hash_ref (@Hash_Ref) {
+      # Pass 1: Collect keys using grep
+      my @keys_to_rename = grep { /\Q$d_orig\E$/ } keys %$slice_hash_ref; # Changed dereference style
+            
+      # Pass 2: Rename collected keys
+      foreach my $old_key (@keys_to_rename) {
+          (my $new_key = $old_key) =~ s/\Q$d_orig\E$/$d_new/; # Create new key name, idiomatically
+                
+          # Directly assign the result of delete
+          $slice_hash_ref->{$new_key} = delete $slice_hash_ref->{$old_key};
+      }
     }
     print STDERR "done.\n";
   }
