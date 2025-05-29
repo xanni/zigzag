@@ -1,7 +1,7 @@
 use strict;
 use warnings;
 use lib '.'; # To find Zigzag.pm when run from the project directory
-use Test::More tests => 18;
+use Test::More tests => 22;
 
 # Ensure the Zigzag module loads
 BEGIN { use_ok('Zigzag'); }
@@ -288,4 +288,305 @@ subtest 'dimension_is_essential' => sub {
     ok( !Zigzag::dimension_is_essential('d.foo'), "d.foo is not essential");
     ok( !Zigzag::dimension_is_essential('+d.bar'), "+d.bar is not essential");
     ok( !Zigzag::dimension_is_essential('d.12'), "d.12 is not essential");
+};
+
+# --- Tests for cell_new ---
+subtest 'cell_new' => sub {
+    plan tests => 14;
+
+    my $initial_n = $Zigzag::Hash_Ref[0]{"n"}; # Store initial "n"
+
+    # Test Case 1: Create a new cell with default content.
+    my $new_cell_id_default = Zigzag::cell_new();
+    like($new_cell_id_default, qr/^\d+$/, "1.1: New cell ID ($new_cell_id_default) is a number");
+    ok(exists $test_slice->{$new_cell_id_default}, "1.2: New cell ($new_cell_id_default) exists in hash");
+    is($test_slice->{$new_cell_id_default}, "$new_cell_id_default", "1.3: New cell ($new_cell_id_default) content is its own ID by default");
+
+    # Test Case 2: Create a new cell with specified content.
+    my $custom_content = "custom content for cell_new";
+    my $new_cell_id_content = Zigzag::cell_new($custom_content);
+    like($new_cell_id_content, qr/^\d+$/, "2.1: New cell ID with content ($new_cell_id_content) is a number");
+    is($test_slice->{$new_cell_id_content}, $custom_content, "2.2: New cell ($new_cell_id_content) has specified content");
+
+    # Test Case 3: Create multiple new cells to ensure unique IDs.
+    # Assuming $new_cell_id_default and $new_cell_id_content were taken from 'n'
+    # $Zigzag::Hash_Ref[0]{"n"} should be $initial_n + 2 at this point.
+    my $next_id_before_multi = $Zigzag::Hash_Ref[0]{"n"};
+    my $cell_id1_multi = Zigzag::cell_new();
+    my $cell_id2_multi = Zigzag::cell_new();
+    isnt($cell_id1_multi, $cell_id2_multi, "3.1: Multiple new cell IDs ($cell_id1_multi, $cell_id2_multi) are different");
+    is($cell_id1_multi, $next_id_before_multi, "3.2: First new cell ID ($cell_id1_multi) is as expected ($next_id_before_multi)");
+    is($cell_id2_multi, $next_id_before_multi + 1, "3.3: Second new cell ID ($cell_id2_multi) is incremented from first");
+    is($Zigzag::Hash_Ref[0]{"n"}, $next_id_before_multi + 2, "3.4: Global 'n' is updated correctly after multiple creations");
+
+    # Test Case 4: Recycle a cell.
+    my $DELETE_HOME = 99; # Defined in Zigzag.pm
+    my $recyclable_cell_id = '3010'; # Arbitrary high number for recycle test
+    $test_slice->{$recyclable_cell_id} = "Recyclable";
+
+    # Save original DELETE_HOME links to restore later, as initial_geometry sets them up.
+    my $orig_dh_minus_d2 = $test_slice->{"${DELETE_HOME}-d.2"};
+    my $orig_dh_plus_d2 = $test_slice->{"${DELETE_HOME}+d.2"};
+
+    # Put $recyclable_cell_id onto the recycle pile (making it the only item)
+    $test_slice->{"${DELETE_HOME}-d.2"} = $recyclable_cell_id; # DELETE_HOME points to it
+    $test_slice->{"${recyclable_cell_id}+d.2"} = $DELETE_HOME; # It points back to DELETE_HOME
+    $test_slice->{"${recyclable_cell_id}-d.2"} = $DELETE_HOME; # It's the only one, so it's newest and oldest relative to DELETE_HOME
+
+    my $recycled_content = "New content for recycled cell";
+    my $recycled_cell_id_actual = Zigzag::cell_new($recycled_content);
+
+    is($recycled_cell_id_actual, $recyclable_cell_id, "4.1: Recycled cell ID ($recycled_cell_id_actual) is the expected one ($recyclable_cell_id)");
+    is($test_slice->{$recycled_cell_id_actual}, $recycled_content, "4.2: Recycled cell has new content");
+    is($test_slice->{"${DELETE_HOME}-d.2"}, $DELETE_HOME, "4.3: DELETE_HOME -d.2 link updated (points to self as pile is empty)");
+    is($test_slice->{"${recycled_cell_id_actual}+d.2"}, undef, "4.4: Recycled cell's +d.2 link is removed");
+    is($test_slice->{"${recycled_cell_id_actual}-d.2"}, undef, "4.5: Recycled cell's -d.2 link is removed");
+
+    # Cleanup for recycle test:
+    # Restore DELETE_HOME's original d.2 links
+    $test_slice->{"${DELETE_HOME}-d.2"} = $orig_dh_minus_d2;
+    $test_slice->{"${DELETE_HOME}+d.2"} = $orig_dh_plus_d2;
+    # Delete the test cells created if they weren't recycled, or if their content needs resetting
+    delete $test_slice->{$new_cell_id_default}; # Content was its own ID
+    delete $test_slice->{$new_cell_id_content};
+    delete $test_slice->{$cell_id1_multi};
+    delete $test_slice->{$cell_id2_multi};
+    # $recyclable_cell_id ('3010') was reused, its content changed, and links cleared.
+    # We can delete it or leave it with its new content for this test scope.
+    # For strictness, delete it if no other test expects it.
+    delete $test_slice->{$recyclable_cell_id};
+    # Restore 'n' to what it was before this subtest to avoid impacting subsequent tests
+    # that might rely on 'n' starting from where initial_geometry left it.
+    # This is tricky because other tests might also call cell_new.
+    # For now, we assume 'n' is managed globally and tests should accommodate its increase.
+    # The most robust way would be to calculate how many new cells this test *actually* created from 'n'
+    # (default, content, multi1, multi2 = 4 cells from 'n') and decrement 'n' by that.
+    # The recycle test reuses a cell, so it doesn't increment 'n'.
+    $Zigzag::Hash_Ref[0]{"n"} = $initial_n + 4; # Correctly reflect cells taken from 'n'
+};
+
+# --- Tests for cell_excise ---
+subtest 'cell_excise' => sub {
+    plan tests => 17;
+
+    my $dim = 'd.testex'; # Common dimension for most tests
+    my $cell_A = '4000'; my $cell_B = '4001'; my $cell_C = '4002';
+    my $cell_S = '4003'; # Standalone
+    my $cell_circA = '4004'; my $cell_circB = '4005'; my $dim_circ = 'd.testex_circ';
+
+    # Pre-define cells to ensure they exist for tests if not linked
+    $test_slice->{$cell_A} = 'Cell A'; $test_slice->{$cell_B} = 'Cell B'; $test_slice->{$cell_C} = 'Cell C';
+    $test_slice->{$cell_S} = 'Standalone Cell S';
+    $test_slice->{$cell_circA} = 'Circular Cell A'; $test_slice->{$cell_circB} = 'Circular Cell B';
+
+    # Test Case 1: Excise cell from middle of a 3-cell chain.
+    # A <--(d.testex)--> B <--(d.testex)--> C
+    Zigzag::link_make($cell_A, $cell_B, "+$dim");
+    Zigzag::link_make($cell_B, $cell_C, "+$dim");
+    Zigzag::cell_excise($cell_B, $dim);
+    is($test_slice->{"$cell_B+$dim"}, undef, "1.1: Excised cell B+$dim is undef");
+    is($test_slice->{"$cell_B-$dim"}, undef, "1.2: Excised cell B-$dim is undef");
+    is($test_slice->{"$cell_A+$dim"}, $cell_C, "1.3: Former prev A+$dim links to former next C");
+    is($test_slice->{"$cell_C-$dim"}, $cell_A, "1.4: Former next C-$dim links to former prev A");
+    # Cleanup for Test 1
+    delete $test_slice->{"$cell_A+$dim"}; delete $test_slice->{"$cell_C-$dim"};
+
+    # Test Case 2: Excise cell from beginning of a chain (has only +dim neighbor).
+    # B <--(d.testex)--> C
+    Zigzag::link_make($cell_B, $cell_C, "+$dim");
+    Zigzag::cell_excise($cell_B, $dim);
+    is($test_slice->{"$cell_B+$dim"}, undef, "2.1: Excised cell B+$dim (start of chain) is undef");
+    is($test_slice->{"$cell_B-$dim"}, undef, "2.2: Excised cell B-$dim (start of chain) is undef");
+    is($test_slice->{"$cell_C-$dim"}, undef, "2.3: Former next C-$dim (start of chain) is undef");
+    # Cleanup for Test 2 (C might still have links if not cleaned by excise fully, but B's are gone)
+    delete $test_slice->{"$cell_C+$dim"}; delete $test_slice->{"$cell_C-$dim"};
+
+    # Test Case 3: Excise cell from end of a chain (has only -dim neighbor).
+    # A <--(d.testex)--> B
+    Zigzag::link_make($cell_A, $cell_B, "+$dim");
+    Zigzag::cell_excise($cell_B, $dim);
+    is($test_slice->{"$cell_B+$dim"}, undef, "3.1: Excised cell B+$dim (end of chain) is undef");
+    is($test_slice->{"$cell_B-$dim"}, undef, "3.2: Excised cell B-$dim (end of chain) is undef");
+    is($test_slice->{"$cell_A+$dim"}, undef, "3.3: Former prev A+$dim (end of chain) is undef");
+    # Cleanup for Test 3
+    delete $test_slice->{"$cell_A+$dim"}; delete $test_slice->{"$cell_A-$dim"};
+
+    # Test Case 4: Excise standalone cell.
+    # Cell S ('4003') has no links in $dim.
+    Zigzag::cell_excise($cell_S, $dim); # Should not die
+    is($test_slice->{"$cell_S+$dim"}, undef, "4.1: Standalone cell S+$dim remains undef");
+    is($test_slice->{"$cell_S-$dim"}, undef, "4.2: Standalone cell S-$dim remains undef");
+    # No specific link cleanup needed as it was standalone in $dim
+
+    # Test Case 5: Excise cell from a 2-cell circular list.
+    # circA <--(dim_circ)--> circB <--(dim_circ)--> circA
+    Zigzag::link_make($cell_circA, $cell_circB, "+$dim_circ");
+    Zigzag::link_make($cell_circB, $cell_circA, "+$dim_circ"); # Complete the circle
+    Zigzag::cell_excise($cell_circA, $dim_circ);
+    is($test_slice->{"$cell_circA+$dim_circ"}, undef, "5.1: Excised cell circA+$dim_circ is undef");
+    is($test_slice->{"$cell_circA-$dim_circ"}, undef, "5.2: Excised cell circA-$dim_circ is undef");
+    is($test_slice->{"$cell_circB+$dim_circ"}, $cell_circB, "5.3: Neighbor circB+$dim_circ is self (was circA)");
+    is($test_slice->{"$cell_circB-$dim_circ"}, $cell_circB, "5.4: Neighbor circB-$dim_circ is self (was circA)");
+    # Cleanup for Test 5
+    delete $test_slice->{"$cell_circB+$dim_circ"}; delete $test_slice->{"$cell_circB-$dim_circ"};
+
+    # Test Case 6: Error - cell does not exist.
+    my $non_existent_cell = 'nonexistent_cell_excise';
+    eval { Zigzag::cell_excise($non_existent_cell, $dim); };
+    like($@, qr/No cell $non_existent_cell/, "6.1: Die when cell does not exist");
+
+    # General cleanup of defined cells for this subtest
+    delete $test_slice->{$cell_A}; delete $test_slice->{$cell_B}; delete $test_slice->{$cell_C};
+    delete $test_slice->{$cell_S};
+    delete $test_slice->{$cell_circA}; delete $test_slice->{$cell_circB};
+};
+
+# --- Setup for link_make tests ---
+subtest 'link_make' => sub {
+    plan tests => 7; # 2 for success, 5 for die cases
+
+    # Test 1: Successful link
+    $test_slice->{'1000'} = 'Cell 1000 for link_make';
+    $test_slice->{'1001'} = 'Cell 1001 for link_make';
+    $test_slice->{'1002'} = 'Cell 1002 for link_make';
+    Zigzag::link_make('1000', '1001', '+d.testlink');
+    is($test_slice->{'1000+d.testlink'}, '1001', "link_make: 1000+d.testlink is 1001");
+    is($test_slice->{'1001-d.testlink'}, '1000', "link_make: 1001-d.testlink is 1000");
+
+    # Test 2: Error case: $cell1 does not exist
+    eval { Zigzag::link_make('nonexistent1', '1002', '+d.testlink'); };
+    like($@, qr/No cell nonexistent1/, "link_make: die when cell1 does not exist");
+
+    # Test 3: Error case: $cell2 does not exist
+    eval { Zigzag::link_make('1000', 'nonexistent2', '+d.testlink'); };
+    like($@, qr/No cell nonexistent2/, "link_make: die when cell2 does not exist");
+
+    # Test 4: Error case: Invalid direction
+    eval { Zigzag::link_make('1000', '1002', 'd.invalid'); };
+    like($@, qr/Invalid direction d.invalid/, "link_make: die on invalid direction");
+
+    # Test 5: Error case: $cell1 already linked in $dir
+    # Cells 1000 and 1001 are already linked from Test 1.
+    $test_slice->{'1003'} = 'Cell 1003 for link_make';
+    eval { Zigzag::link_make('1000', '1003', '+d.testlink'); }; # 1000 already has +d.testlink to 1001
+    like($@, qr/1000 already linked/, "link_make: die when cell1 already linked");
+
+    # Cleanup link from Test 1 for Test 6 clarity - though new dim used in test 6
+    delete $test_slice->{'1000+d.testlink'};
+    delete $test_slice->{'1001-d.testlink'};
+
+    # Test 6: Error case: $cell2 already linked in reverse_sign($dir)
+    # Per problem: Link '1002' ('X') and '1003' ('B') with '+d.testlink' ('+D').
+    # This creates B-D = X. ('1003-d.testlink' = '1002')
+    # Then attempt link_make('1004' ('A'), '1003' ('B'), '+d.testlink' ('+D')).
+    # This should fail because '1003-d.testlink' (B-D) is already set.
+    $test_slice->{'1002'} = 'Cell 1002 for link_make (X)'; # Renamed from original test plan for clarity
+    $test_slice->{'1003'} = 'Cell 1003 for link_make (B/cell2)'; # Re-used 1003, content updated
+    $test_slice->{'1004'} = 'Cell 1004 for link_make (A/cell1)';
+    Zigzag::link_make('1002', '1003', '+d.testlink_t6'); # X to B with +D
+    # Now 1003 is linked from 1002 via -d.testlink_t6 (1003-d.testlink_t6 = 1002)
+    eval { Zigzag::link_make('1004', '1003', '+d.testlink_t6'); }; # A to B with +D
+    like($@, qr/1003 already linked/, "link_make: die when cell2 already linked in reverse_sign(dir)");
+
+    # Cleanup for next tests
+    delete $test_slice->{'1000'}; delete $test_slice->{'1001'}; delete $test_slice->{'1002'}; delete $test_slice->{'1003'};
+    delete $test_slice->{'1004'};
+    # delete $test_slice->{'1005'}; delete $test_slice->{'1006'}; # These were from old test 6
+    delete $test_slice->{'1002+d.testlink_t6'}; delete $test_slice->{'1003-d.testlink_t6'};
+    # delete $test_slice->{'1006-d.testlink2'}; delete $test_slice->{'1005+d.testlink2'}; # From old test 6
+};
+
+# --- Setup for link_break tests ---
+subtest 'link_break' => sub {
+    plan tests => 12; # 2x2 for success cases, 8 for die cases
+
+    # Setup cells for link_break tests
+    $test_slice->{'2000'} = 'Cell 2000 for link_break';
+    $test_slice->{'2001'} = 'Cell 2001 for link_break';
+    $test_slice->{'2002'} = 'Cell 2002 for link_break';
+    $test_slice->{'2003'} = 'Cell 2003 for link_break';
+    $test_slice->{'2004'} = 'Cell 2004 for link_break'; # For test 6
+    $test_slice->{'2005'} = 'Cell 2005 for link_break'; # For test 7
+    $test_slice->{'2006'} = 'Cell 2006 for link_break'; # For test 7
+    $test_slice->{'2007'} = 'Cell 2007 for link_break'; # For test 7
+    $test_slice->{'2008'} = 'Cell 2008 for link_break'; # For test 10
+
+    # Test 1: Successful break (3 arguments)
+    Zigzag::link_make('2000', '2001', '+d.testbreak_s3');
+    Zigzag::link_break('2000', '2001', '+d.testbreak_s3');
+    is($test_slice->{'2000+d.testbreak_s3'}, undef, "link_break(3 args): cell1 link is undef");
+    is($test_slice->{'2001-d.testbreak_s3'}, undef, "link_break(3 args): cell2 link is undef");
+
+    # Test 2: Successful break (2 arguments)
+    Zigzag::link_make('2002', '2003', '+d.testbreak_s2');
+    Zigzag::link_break('2002', '+d.testbreak_s2');
+    is($test_slice->{'2002+d.testbreak_s2'}, undef, "link_break(2 args): cell1 link is undef");
+    is($test_slice->{'2003-d.testbreak_s2'}, undef, "link_break(2 args): cell2 link is undef");
+
+    # Test 3: Error case (3 args): $cell1 does not exist
+    eval { Zigzag::link_break('nonexistent_lb1', '2001', '+d.testbreak_e1'); };
+    like($@, qr/nonexistent_lb1 has no link in direction \+d.testbreak_e1/, "link_break(3 args): die when cell1 does not exist (actual msg check)");
+
+    # Test 4: Error case (3 args): $cell2 does not exist
+    Zigzag::link_make('2000', '2001', '+d.testbreak_e2'); # Re-link for this test
+    eval { Zigzag::link_break('2000', 'nonexistent_lb2', '+d.testbreak_e2'); };
+    like($@, qr/2000 is not linked to nonexistent_lb2 in direction \+d.testbreak_e2/, "link_break(3 args): die when cell2 does not exist (actual msg check)");
+    Zigzag::link_break('2000', '+d.testbreak_e2'); # Clean up
+
+    # Test 5: Error case (3 args): Invalid direction
+    # Need to ensure cells are linked for this not to be caught by other checks first
+    Zigzag::link_make('2000', '2001', '+d.testbreak_e3');
+    eval { Zigzag::link_break('2000', '2001', 'd.invalid_lb'); };
+    like($@, qr/Invalid direction d.invalid_lb/, "link_break(3 args): die on invalid direction");
+    Zigzag::link_break('2000', '+d.testbreak_e3'); # Clean up
+
+    # Test 6: Error case (3 args): $cell1 has no link in $dir
+    eval { Zigzag::link_break('2004', '2000', '+d.testbreak_e4'); }; # 2004 is not linked
+    like($@, qr/2004 has no link in direction \+d.testbreak_e4/, "link_break(3 args): die when cell1 has no link in dir");
+
+    # Test 7: Error case (3 args): $cell1 not linked to $cell2 in $dir
+    Zigzag::link_make('2005', '2006', '+d.testbreak_e5'); # 2005 linked to 2006
+    # Cell 2007 is defined but 2005 is not linked to 2007
+    eval { Zigzag::link_break('2005', '2007', '+d.testbreak_e5'); };
+    like($@, qr/2005 is not linked to 2007 in direction \+d.testbreak_e5/, "link_break(3 args): die when cell1 not linked to cell2");
+    Zigzag::link_break('2005', '+d.testbreak_e5'); # Clean up
+
+    # Test 8: Error case (2 args): $cell1 does not exist
+    eval { Zigzag::link_break('nonexistent_lb3', '+d.testbreak_e6'); };
+    like($@, qr/nonexistent_lb3 has no link in direction \+d.testbreak_e6/, "link_break(2 args): die when cell1 does not exist (actual msg check)");
+
+    # Test 9: Error case (2 args): Invalid direction
+    # Need to ensure cell1 exists for this not to be caught by other checks
+    eval { Zigzag::link_break('2000', 'd.invalid_lb2'); };
+    like($@, qr/Invalid direction d.invalid_lb2/, "link_break(2 args): die on invalid direction");
+
+    # Test 10: Error case (2 args): $cell1 has no link in $dir
+    eval { Zigzag::link_break('2008', '+d.testbreak_e7'); }; # 2008 is not linked
+    like($@, qr/2008 has no link in direction \+d.testbreak_e7/, "link_break(2 args): die when cell1 has no link in dir");
+
+    # Cleanup
+    my @cleanup_dims = (
+        '+d.testbreak_s3', '-d.testbreak_s3', '+d.testbreak_s2', '-d.testbreak_s2',
+        '+d.testbreak_e1', '-d.testbreak_e1', '+d.testbreak_e2', '-d.testbreak_e2',
+        '+d.testbreak_e3', '-d.testbreak_e3', '+d.testbreak_e4', '-d.testbreak_e4',
+        '+d.testbreak_e5', '-d.testbreak_e5', '+d.testbreak_e6', '-d.testbreak_e6',
+        '+d.testbreak_e7', '-d.testbreak_e7'
+    );
+    foreach my $i (0..8) {
+        my $cell_id_num = 2000 + $i;
+        # For cells that might not exist during a test (nonexistent_lb*), skip delete if not in test_slice
+        my $cell_id = $test_slice->{$cell_id_num} ? $cell_id_num : undef; 
+        if (defined $cell_id) {
+            delete $test_slice->{$cell_id};
+            foreach my $dim (@cleanup_dims) {
+                delete $test_slice->{"${cell_id}${dim}"};
+            }
+        }
+    }
+     # Explicitly delete links that might involve non-existent cells if created temporarily by link_make
+    foreach my $cell_id_str ('nonexistent_lb1', 'nonexistent_lb2', 'nonexistent_lb3') {
+        foreach my $dim (@cleanup_dims) {
+            delete $test_slice->{"${cell_id_str}${dim}"};
+        }
+    }
 };
