@@ -2,7 +2,6 @@ use strict;
 use warnings;
 use lib '.'; # To find Zigzag.pm when run from the project directory
 use Test::More tests => 23;
-# Removed Fcntl and DB_File as they are no longer used by dimension_rename subtest
 
 # Ensure the Zigzag module loads
 BEGIN { use_ok('Zigzag'); }
@@ -335,10 +334,8 @@ subtest 'dimension_is_essential' => sub {
 };
 
 subtest 'dimension_rename' => sub {
-    my $original_hash_ref0 = $Zigzag::Hash_Ref[0]; # Store original
     # Ensure $Zigzag::Hash_Ref[0] is a fresh, empty hash for this test
-    $Zigzag::Hash_Ref[0] = {}; 
-    my $test_slice = $Zigzag::Hash_Ref[0]; # Alias for populating and testing
+    $test_slice = $Zigzag::Hash_Ref[0] = {};
 
     # Populate with initial data
     $test_slice->{'1'} = 'd.oldname';       # Dimension cell to be renamed
@@ -356,10 +353,6 @@ subtest 'dimension_rename' => sub {
     # CURSOR_HOME ('10') -> +d.1 -> '1'. '1' is the start of d.2 chain for dimensions.
     # No other dimensions initially, so '1+d.2' and '1-d.2' can be self-referential or point to '1'
     # to signify it's the only one in the list connected to CURSOR_HOME's +d.1 path.
-    # For simplicity, we'll assume dimension_find handles a list of one.
-    # If dimension_find needs a loop:
-    # $test_slice->{'1+d.2'} = '1';
-    # $test_slice->{'1-d.2'} = '1';
 
     plan tests => 14; # Updated count
 
@@ -391,8 +384,7 @@ subtest 'dimension_rename' => sub {
     # Proper linking for dimension_find: '1' is head of list from CURSOR_HOME+d.1
     # '2' is next in d.2 chain from '1'.
     $test_slice->{'1+d.2'} = '2'; 
-    $test_slice->{'2-d.2'} = '1'; 
-    # Optional: $test_slice->{'2+d.2'} = '1'; $test_slice->{'1-d.2'} = '2'; to close loop
+    $test_slice->{'2-d.2'} = '1';
 
     Zigzag::dimension_rename('d.newname', 'd.existingname'); # This call should do nothing as d.existingname already exists
     
@@ -400,11 +392,8 @@ subtest 'dimension_rename' => sub {
     is($test_slice->{'1'}, 'd.newname', 'Dimension cell 1 content remains d.newname after trying to rename to existing');
     ok(exists $test_slice->{'100+d.newname'}, 'Key 100+d.newname still exists after attempting to rename to existing dimension');
     ok(!exists $test_slice->{'100+d.existingname'}, 'Key 100+d.existingname was not created from 100+d.newname');
-    
-    $Zigzag::Hash_Ref[0] = $original_hash_ref0; # Restore original
 };
 
-# --- Tests for cell_new ---
 subtest 'cell_new' => sub {
     %$test_slice = Zigzag::initial_geometry();
     plan tests => 14;
@@ -451,7 +440,6 @@ subtest 'cell_new' => sub {
     is($test_slice->{"${recycled_cell_id_actual}-d.2"}, undef, "4.5: Recycled cell's -d.2 link is removed");
 };
 
-# --- Tests for cell_excise ---
 subtest 'cell_excise' => sub {
     %$test_slice = Zigzag::initial_geometry();
     plan tests => 17;
@@ -523,7 +511,6 @@ subtest 'cell_excise' => sub {
     like($@, qr/No cell $non_existent_cell/, "6.1: Die when cell does not exist");
 };
 
-# --- Setup for link_make tests ---
 subtest 'link_make' => sub {
     %$test_slice = Zigzag::initial_geometry();
     plan tests => 7; # 2 for success, 5 for die cases
@@ -568,7 +555,6 @@ subtest 'link_make' => sub {
     like($@, qr/1003 already linked/, "link_make: die when cell2 already linked in reverse_sign(dir)");
 };
 
-# --- Setup for link_break tests ---
 subtest 'link_break' => sub {
     %$test_slice = Zigzag::initial_geometry();
     plan tests => 12; # 2x2 for success cases, 8 for die cases
