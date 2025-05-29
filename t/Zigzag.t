@@ -1,18 +1,14 @@
 use strict;
 use warnings;
 use lib '.'; # To find Zigzag.pm when run from the project directory
-use Test::More tests => 18;
+use Test::More tests => 22;
 
 # Ensure the Zigzag module loads
 BEGIN { use_ok('Zigzag'); }
 
 # Setup data for all tests in slice 0
-# Note: is_essential tests do not require data setup in @Zigzag::Hash_Ref
-# as they rely on constants defined in Zigzag.pm (CURSOR_HOME, etc.)
-# and direct comparison with cell IDs.
 @Zigzag::Hash_Ref = ({}); 
 my $test_slice = $Zigzag::Hash_Ref[0];
-%{$test_slice} = Zigzag::initial_geometry(); # Load initial geometry
 
 subtest 'reverse_sign' => sub {
     plan tests => 2;
@@ -20,31 +16,32 @@ subtest 'reverse_sign' => sub {
     is( Zigzag::reverse_sign('-d.test'), '+d.test', 'negative to positive');
 };
 
-# --- Setup for is_cursor tests ---
-# These will overwrite/add to initial_geometry for specific test needs
-$test_slice->{'100'} = 'Cell 100 (cursor)';
-$test_slice->{'101'} = 'Cell 101 (target for cursor link)';
-$test_slice->{'102'} = 'Cell 102 (not a cursor)';
-$test_slice->{'100+d.cursor'} = '101'; $test_slice->{'101-d.cursor'} = '100';
-
 subtest 'is_cursor' => sub {
+    %$test_slice = Zigzag::initial_geometry();
+
+    $test_slice->{'100'} = 'Cell 100 (cursor)';
+    $test_slice->{'101'} = 'Cell 101 (target for cursor link)';
+    $test_slice->{'102'} = 'Cell 102 (not a cursor)';
+    $test_slice->{'100+d.cursor'} = '101'; $test_slice->{'101-d.cursor'} = '100';
+
     plan tests => 2;
     ok( Zigzag::is_cursor('100'), 'cell 100 is a cursor (returns 1)');
     ok( !Zigzag::is_cursor('102'), 'cell 102 is not a cursor (returns an empty string)');
 };
 
-# --- Setup for is_clone tests ---
-$test_slice->{'200'} = 'Cell 200 (clone via -d.clone)';
-$test_slice->{'299'} = 'Helper cell for 200-d.clone link'; 
-$test_slice->{'200-d.clone'} = '299'; $test_slice->{'299+d.clone'} = '200'; 
-
-$test_slice->{'201'} = 'Cell 201 (clone via +d.clone)';
-$test_slice->{'298'} = 'Helper cell for 201+d.clone link'; 
-$test_slice->{'201+d.clone'} = '298'; $test_slice->{'298-d.clone'} = '201';
-
-$test_slice->{'202'} = 'Cell 202 (not a clone)';
-
 subtest 'is_clone' => sub {
+    %$test_slice = Zigzag::initial_geometry();
+
+    $test_slice->{'200'} = 'Cell 200 (clone via -d.clone)';
+    $test_slice->{'299'} = 'Helper cell for 200-d.clone link'; 
+    $test_slice->{'200-d.clone'} = '299'; $test_slice->{'299+d.clone'} = '200'; 
+
+    $test_slice->{'201'} = 'Cell 201 (clone via +d.clone)';
+    $test_slice->{'298'} = 'Helper cell for 201+d.clone link'; 
+    $test_slice->{'201+d.clone'} = '298'; $test_slice->{'298-d.clone'} = '201';
+
+    $test_slice->{'202'} = 'Cell 202 (not a clone)';
+
     plan tests => 3;
     ok( Zigzag::is_clone('200'), 'cell 200 is a clone (returns 1)');
     ok( Zigzag::is_clone('201'), 'cell 201 is a clone (via +d.clone)');
@@ -52,6 +49,8 @@ subtest 'is_clone' => sub {
 };
 
 subtest 'is_essential' => sub {
+    %$test_slice = Zigzag::initial_geometry();
+
     plan tests => 5;
     # Essential cell IDs are 0, $CURSOR_HOME (10), $SELECT_HOME (21), $DELETE_HOME (99)
     # These tests rely on initial_geometry
@@ -62,75 +61,113 @@ subtest 'is_essential' => sub {
     ok( !Zigzag::is_essential('50'), 'cell 50 is not essential'); # Test with a non-essential number
 };
 
-# --- Setup for get_accursed tests ---
-# get_cursor(0) should return cell 11 (CURSOR_HOME +d.2 from initial_geometry)
-# We will make cell 111 the accursed cell for cursor 0 (cell 11)
-$test_slice->{'111'} = 'Cell 111 (accursed for cursor 0/cell 11)';
-$test_slice->{'11-d.cursor'} = '111'; $test_slice->{'111+d.cursor'} = '11';
-
 subtest 'get_accursed' => sub {
+    %$test_slice = Zigzag::initial_geometry();
+
+    # get_cursor(0) should return cell 11 (CURSOR_HOME +d.2 from initial_geometry)
+    # We will make cell 111 the accursed cell for cursor 0 (cell 11)
+    $test_slice->{'111'} = 'Cell 111 (accursed for cursor 0/cell 11)';
+    # Note: cell '11' is established by initial_geometry.
+    # We are modifying its '-d.cursor' link and creating the corresponding '+d.cursor' on '111'.
+    $test_slice->{'11-d.cursor'} = '111'; 
+    $test_slice->{'111+d.cursor'} = '11';
+
     plan tests => 1;
     is( Zigzag::get_accursed(0), '111', 'get_accursed(0): returns cell 111 (accursed for cursor 0/cell 11)');
 };
 
-# --- Setup for get_active_selection and get_selection tests ---
-my $SELECT_HOME = 21; # From Zigzag.pm constants (already in initial_geometry)
-
-# Define new cells for selections
-$test_slice->{'22'}  = 'Selection Head 1'; 
-$test_slice->{'400'} = 'Cell 400 for active selection';
-$test_slice->{'401'} = 'Cell 401 for active selection';
-$test_slice->{'402'} = 'Cell 402 for secondary selection';
-
-# Active selection (selection 0, around $SELECT_HOME)
-$test_slice->{"${SELECT_HOME}+d.mark"} = '400'; $test_slice->{'400-d.mark'} = $SELECT_HOME;
-$test_slice->{'400+d.mark'} = '401';           $test_slice->{'401-d.mark'} = '400';
-$test_slice->{'401+d.mark'} = $SELECT_HOME;    $test_slice->{"${SELECT_HOME}-d.mark"} = '401'; # Cycle complete
-
-# Secondary selection (selection 1, head cell 22)
-# Link new selection head 22 into the list of selections (21 <-> 22)
-$test_slice->{"${SELECT_HOME}+d.2"} = '22';    $test_slice->{'22-d.2'} = $SELECT_HOME;
-$test_slice->{'22+d.2'} = $SELECT_HOME;       # Cycle selection heads (21 is already -d.2 from 22 via initial_geometry if not overwritten)
-$test_slice->{"${SELECT_HOME}-d.2"} = '22';   # Explicitly make 21 point back to 22 in -d.2
-
-# Link cells to selection head 22
-$test_slice->{'22+d.mark'} = '402';            $test_slice->{'402-d.mark'} = '22';
-$test_slice->{'402+d.mark'} = '22';            $test_slice->{'22-d.mark'} = '402'; # Cycle complete
-
 subtest 'get_active_selection' => sub {
+    %$test_slice = Zigzag::initial_geometry();
+
+    my $SELECT_HOME = 21; # From Zigzag.pm constants (already in initial_geometry)
+
+    # Define new cells for selections
+    $test_slice->{'22'}  = 'Selection Head 1'; 
+    $test_slice->{'400'} = 'Cell 400 for active selection';
+    $test_slice->{'401'} = 'Cell 401 for active selection';
+
+    # Active selection (selection 0, around $SELECT_HOME)
+    $test_slice->{"${SELECT_HOME}+d.mark"} = '400'; $test_slice->{'400-d.mark'} = $SELECT_HOME;
+    $test_slice->{'400+d.mark'} = '401';           $test_slice->{'401-d.mark'} = '400';
+    $test_slice->{'401+d.mark'} = $SELECT_HOME;    $test_slice->{"${SELECT_HOME}-d.mark"} = '401'; # Cycle complete
+
     plan tests => 1;
     is_deeply( [Zigzag::get_active_selection()], ['400', '401', $SELECT_HOME], 'returns cells 400, 401, and 21');
 };
 
 subtest 'get_selection' => sub {
+    %$test_slice = Zigzag::initial_geometry();
+
+    my $SELECT_HOME = 21; # From Zigzag.pm constants (already in initial_geometry)
+
+    # Define new cells for selections
+    $test_slice->{'22'}  = 'Selection Head 1'; 
+    $test_slice->{'402'} = 'Cell 402 for secondary selection';
+
+    # Secondary selection (selection 1, head cell 22)
+    # Link new selection head 22 into the list of selections (21 <-> 22)
+    $test_slice->{"${SELECT_HOME}+d.2"} = '22';    $test_slice->{'22-d.2'} = $SELECT_HOME;
+    $test_slice->{'22+d.2'} = $SELECT_HOME;       # Cycle selection heads (21 is already -d.2 from 22 via initial_geometry if not overwritten)
+    $test_slice->{"${SELECT_HOME}-d.2"} = '22';   # Explicitly make 21 point back to 22 in -d.2
+
+    # Link cells to selection head 22
+    $test_slice->{'22+d.mark'} = '402';            $test_slice->{'402-d.mark'} = '22';
+    $test_slice->{'402+d.mark'} = '22';            $test_slice->{'22-d.mark'} = '402'; # Cycle complete
+
     plan tests => 1;
     is_deeply( [Zigzag::get_selection(1)], ['402', '22'], 'get_selection(1): returns cells 402 and 22');
 };
 
 subtest 'get_which_selection' => sub {
+    %$test_slice = Zigzag::initial_geometry();
+
+    my $SELECT_HOME = 21; # From Zigzag.pm constants (already in initial_geometry)
+
+    # Define new cells for selections
+    $test_slice->{'22'}  = 'Selection Head 1'; 
+    $test_slice->{'400'} = 'Cell 400 for active selection';
+    $test_slice->{'401'} = 'Cell 401 for active selection';
+    $test_slice->{'402'} = 'Cell 402 for secondary selection';
+
+    # Active selection (selection 0, around $SELECT_HOME)
+    $test_slice->{"${SELECT_HOME}+d.mark"} = '400'; $test_slice->{'400-d.mark'} = $SELECT_HOME;
+    $test_slice->{'400+d.mark'} = '401';           $test_slice->{'401-d.mark'} = '400';
+    $test_slice->{'401+d.mark'} = $SELECT_HOME;    $test_slice->{"${SELECT_HOME}-d.mark"} = '401'; # Cycle complete
+
+    # Secondary selection (selection 1, head cell 22)
+    # Link new selection head 22 into the list of selections (21 <-> 22)
+    $test_slice->{"${SELECT_HOME}+d.2"} = '22';    $test_slice->{'22-d.2'} = $SELECT_HOME;
+    $test_slice->{'22+d.2'} = $SELECT_HOME;       # Cycle selection heads (21 is already -d.2 from 22 via initial_geometry if not overwritten)
+    $test_slice->{"${SELECT_HOME}-d.2"} = '22';   # Explicitly make 21 point back to 22 in -d.2
+
+    # Link cells to selection head 22
+    $test_slice->{'22+d.mark'} = '402';            $test_slice->{'402-d.mark'} = '22';
+    $test_slice->{'402+d.mark'} = '22';            $test_slice->{'22-d.mark'} = '402'; # Cycle complete
+
     plan tests => 3;
     is( Zigzag::get_which_selection('400'), '401', 'cell in active selection returns 401');
     is( Zigzag::get_which_selection('402'), '22', 'cell in secondary selection returns 22');
     is( Zigzag::get_which_selection('102'), undef, 'cell not in selection returns undef');
 };
 
-# --- Setup for get_lastcell tests ---
-# Linear chain: 500 <-> 501 <-> 502 in d.testchain
-$test_slice->{'500'} = 'Cell 500 (start of linear chain)';
-$test_slice->{'501'} = 'Cell 501 (middle of linear chain)';
-$test_slice->{'502'} = 'Cell 502 (end of linear chain)';
-$test_slice->{'500+d.testchain'} = '501'; $test_slice->{'501-d.testchain'} = '500';
-$test_slice->{'501+d.testchain'} = '502'; $test_slice->{'502-d.testchain'} = '501';
-
-# Circular list: 600 <-> 601 <-> 602 <-> 600 in d.testcircle
-$test_slice->{'600'} = 'Cell 600 (part of circular list)';
-$test_slice->{'601'} = 'Cell 601 (part of circular list)';
-$test_slice->{'602'} = 'Cell 602 (part of circular list)';
-$test_slice->{'600+d.testcircle'} = '601'; $test_slice->{'601-d.testcircle'} = '600';
-$test_slice->{'601+d.testcircle'} = '602'; $test_slice->{'602-d.testcircle'} = '601';
-$test_slice->{'602+d.testcircle'} = '600'; $test_slice->{'600-d.testcircle'} = '602';
-
 subtest 'get_lastcell' => sub {
+    %$test_slice = Zigzag::initial_geometry();
+
+    # Linear chain: 500 <-> 501 <-> 502 in d.testchain
+    $test_slice->{'500'} = 'Cell 500 (start of linear chain)';
+    $test_slice->{'501'} = 'Cell 501 (middle of linear chain)';
+    $test_slice->{'502'} = 'Cell 502 (end of linear chain)';
+    $test_slice->{'500+d.testchain'} = '501'; $test_slice->{'501-d.testchain'} = '500';
+    $test_slice->{'501+d.testchain'} = '502'; $test_slice->{'502-d.testchain'} = '501';
+
+    # Circular list: 600 <-> 601 <-> 602 <-> 600 in d.testcircle
+    $test_slice->{'600'} = 'Cell 600 (part of circular list)';
+    $test_slice->{'601'} = 'Cell 601 (part of circular list)';
+    $test_slice->{'602'} = 'Cell 602 (part of circular list)';
+    $test_slice->{'600+d.testcircle'} = '601'; $test_slice->{'601-d.testcircle'} = '600';
+    $test_slice->{'601+d.testcircle'} = '602'; $test_slice->{'602-d.testcircle'} = '601';
+    $test_slice->{'602+d.testcircle'} = '600'; $test_slice->{'600-d.testcircle'} = '602';
+
     plan tests => 4;
     # Linear chain tests
     is( Zigzag::get_lastcell('500', '+d.testchain'), '502', '(linear +): start 500, end 502');
@@ -140,16 +177,17 @@ subtest 'get_lastcell' => sub {
     is( Zigzag::get_lastcell('600', '-d.testcircle'), '601', '(circular -): start 600, returns cell before start (601)');
 };
 
-# --- Setup for get_distance tests ---
-$test_slice->{'700'} = 'Cell 700 for get_distance';
-$test_slice->{'701'} = 'Cell 701 for get_distance';
-$test_slice->{'702'} = 'Cell 702 for get_distance';
-$test_slice->{'705'} = 'Cell 705 for get_distance (isolated)';
-# Chain: 700 <-> 701 <-> 702 in +d.testdist
-$test_slice->{'700+d.testdist'} = '701'; $test_slice->{'701-d.testdist'} = '700';
-$test_slice->{'701+d.testdist'} = '702'; $test_slice->{'702-d.testdist'} = '701';
-
 subtest 'get_distance' => sub {
+    %$test_slice = Zigzag::initial_geometry();
+
+    $test_slice->{'700'} = 'Cell 700 for get_distance';
+    $test_slice->{'701'} = 'Cell 701 for get_distance';
+    $test_slice->{'702'} = 'Cell 702 for get_distance';
+    $test_slice->{'705'} = 'Cell 705 for get_distance (isolated)';
+    # Chain: 700 <-> 701 <-> 702 in +d.testdist
+    $test_slice->{'700+d.testdist'} = '701'; $test_slice->{'701-d.testdist'} = '700';
+    $test_slice->{'701+d.testdist'} = '702'; $test_slice->{'702-d.testdist'} = '701';
+
     plan tests => 7;
     is( Zigzag::get_distance('700', '+d.testdist', '702'), 2, "('700', '+d.testdist', '702') is 2");
     is( Zigzag::get_distance('702', '-d.testdist', '700'), 2, "('702', '-d.testdist', '700') is 2");
@@ -160,45 +198,47 @@ subtest 'get_distance' => sub {
     is( Zigzag::get_distance('700', '+d.otherdim', '701'), undef, "('700', '+d.otherdim', '701') is undef (wrong dimension)");
 };
 
-# --- Setup for get_outline_parent tests ---
-$test_slice->{'800'} = 'Cell 800 (child for outline parent)';
-$test_slice->{'801'} = 'Cell 801 (parent for outline parent)';
-$test_slice->{'802'} = 'Cell 802 (intermediate for 800-d.2)';
-$test_slice->{'803'} = 'Cell 803 (unrelated for outline parent)'; # Not used by links, just defined
-
-# Case 1: 800 has parent 801 via 802
-$test_slice->{'800-d.2'} = '802'; $test_slice->{'802+d.2'} = '800';
-$test_slice->{'802-d.1'} = '801'; $test_slice->{'801+d.1'} = '802';
-
-# Case 2: 801 is its own "outline parent" (no -d.2 path to another -d.1)
-$test_slice->{'801-d.2'} = '801'; $test_slice->{'801+d.2'} = '801'; # Loop on itself in -d.2
-
-# Case 3: 810 has no outline parent (circular -d.2 chain without -d.1)
-$test_slice->{'810'} = 'Cell 810 (no outline parent)';
-$test_slice->{'811'} = 'Cell 811 (part of 810s -d.2 loop)';
-$test_slice->{'810-d.2'} = '811'; $test_slice->{'811+d.2'} = '810';
-$test_slice->{'811-d.2'} = '810'; $test_slice->{'810+d.2'} = '811';
-
 subtest 'get_outline_parent' => sub {
+    %$test_slice = Zigzag::initial_geometry();
+
+    $test_slice->{'800'} = 'Cell 800 (child for outline parent)';
+    $test_slice->{'801'} = 'Cell 801 (parent for outline parent)';
+    $test_slice->{'802'} = 'Cell 802 (intermediate for 800-d.2)';
+    $test_slice->{'803'} = 'Cell 803 (unrelated for outline parent)'; # Not used by links, just defined
+
+    # Case 1: 800 has parent 801 via 802
+    $test_slice->{'800-d.2'} = '802'; $test_slice->{'802+d.2'} = '800';
+    $test_slice->{'802-d.1'} = '801'; $test_slice->{'801+d.1'} = '802';
+
+    # Case 2: 801 is its own "outline parent" (no -d.2 path to another -d.1)
+    $test_slice->{'801-d.2'} = '801'; $test_slice->{'801+d.2'} = '801'; # Loop on itself in -d.2
+
+    # Case 3: 810 has no outline parent (circular -d.2 chain without -d.1)
+    $test_slice->{'810'} = 'Cell 810 (no outline parent)';
+    $test_slice->{'811'} = 'Cell 811 (part of 810s -d.2 loop)';
+    $test_slice->{'810-d.2'} = '811'; $test_slice->{'811+d.2'} = '810';
+    $test_slice->{'811-d.2'} = '810'; $test_slice->{'810+d.2'} = '811';
+
     plan tests => 3;
     is( Zigzag::get_outline_parent('800'), '801', "('800') is '801'");
     is( Zigzag::get_outline_parent('801'), '801', "('801') (parent itself, -d.2 loops) is '801'");
     is( Zigzag::get_outline_parent('810'), '811', "('810') (circular -d.2, stops at 811) is '811'");
 };
 
-# --- Setup for get_cell_contents tests ---
-$test_slice->{'850'} = 'Direct content for 850';
-$test_slice->{'851'} = 'Cell 851 (clone of 852)'; # This content is just a note
-$test_slice->{'852'} = 'Content from original cell 852';
-$test_slice->{'851-d.clone'} = '852'; $test_slice->{'852+d.clone'} = '851';
-
-$test_slice->{'853'} = 'Cell 853 (clone of 854)'; # This content is just a note
-$test_slice->{'854'} = 'Content from original cell 854';
-$test_slice->{'853+d.clone'} = '854'; $test_slice->{'854-d.clone'} = '853';
-
-$test_slice->{'855'} = '[10+20]'; # Special ZZMail-like content
-
 subtest 'get_cell_contents' => sub {
+    %$test_slice = Zigzag::initial_geometry();
+
+    $test_slice->{'850'} = 'Direct content for 850';
+    $test_slice->{'851'} = 'Cell 851 (clone of 852)'; # This content is just a note
+    $test_slice->{'852'} = 'Content from original cell 852';
+    $test_slice->{'851-d.clone'} = '852'; $test_slice->{'852+d.clone'} = '851';
+
+    $test_slice->{'853'} = 'Cell 853 (clone of 854)'; # This content is just a note
+    $test_slice->{'854'} = 'Content from original cell 854';
+    $test_slice->{'853+d.clone'} = '854'; $test_slice->{'854-d.clone'} = '853';
+
+    $test_slice->{'855'} = '[10+20]'; # Special ZZMail-like content
+
     plan tests => 4;
     is( Zigzag::get_cell_contents('850'), 'Direct content for 850', "('850') returns direct content");
     is( Zigzag::get_cell_contents('851'), 'Content from original cell 852', "('851') returns content of original (-d.clone)");
@@ -206,15 +246,16 @@ subtest 'get_cell_contents' => sub {
     is( Zigzag::get_cell_contents('855'), '[10+20]', "('855') returns raw ZZMail-like content when ZZMAIL_SUPPORT is false");
 };
 
-# --- Setup for get_cursor tests ---
-# initial_geometry provides cursor 0 (11) and cursor 1 (16)
-# $CURSOR_HOME (10) -> 11 (cursor 0) -> 16 (cursor 1)
-$test_slice->{'900'} = 'Test Cursor 2';
-$test_slice->{'16+d.2'} = '900'; # Link from cursor 1 (cell 16) to cursor 2 (cell 900)
-$test_slice->{'900-d.2'} = '16'; # Bidirectional link
-# Cell 900 has no '+d.2' link, marking the end of the explicit cursor chain for testing die condition
-
 subtest 'get_cursor' => sub {
+    %$test_slice = Zigzag::initial_geometry();
+
+    # initial_geometry provides cursor 0 (11) and cursor 1 (16)
+    # $CURSOR_HOME (10) -> 11 (cursor 0) -> 16 (cursor 1)
+    $test_slice->{'900'} = 'Test Cursor 2';
+    $test_slice->{'16+d.2'} = '900'; # Link from cursor 1 (cell 16) to cursor 2 (cell 900)
+    $test_slice->{'900-d.2'} = '16'; # Bidirectional link
+    # Cell 900 has no '+d.2' link, marking the end of the explicit cursor chain for testing die condition
+
     plan tests => 4;
     is( Zigzag::get_cursor(0), '11', "(0) returns cell 11 (from initial_geometry)");
     is( Zigzag::get_cursor(1), '16', "(1) returns cell 16 (from initial_geometry)");
@@ -227,6 +268,7 @@ subtest 'get_cursor' => sub {
 };
 
 subtest 'get_dimension' => sub {
+    %$test_slice = Zigzag::initial_geometry();
     plan tests => 7;
     my $cursor_cell_for_dim_test = Zigzag::get_cursor(0); # Should be 11
     # Expected dimensions based on initial_geometry for cursor 0 (cell 11):
@@ -246,18 +288,19 @@ subtest 'get_dimension' => sub {
     like($@, qr/\Q$expected_error_msg_dim\E/, "with invalid direction $invalid_dir dies with message '$expected_error_msg_dim'");
 };
 
-# --- Setup for get_links_to tests ---
-# Define target and source cells
-$test_slice->{'950'} = 'Target cell for links';
-$test_slice->{'951'} = 'Source cell 1';
-$test_slice->{'952'} = 'Source cell 2';
-$test_slice->{'953'} = 'Source cell 3';
-$test_slice->{'960'} = 'Cell with no links';
-$test_slice->{'951+d.1'} = '950'; $test_slice->{'950-d.1'} = '951';
-$test_slice->{'952+d.2'} = '950'; $test_slice->{'950-d.2'} = '952';
-$test_slice->{'953+d.clone'} = '950'; $test_slice->{'950-d.clone'} = '953';
-
 subtest 'get_links_to' => sub {
+    %$test_slice = Zigzag::initial_geometry();
+
+    # Define target and source cells
+    $test_slice->{'950'} = 'Target cell for links';
+    $test_slice->{'951'} = 'Source cell 1';
+    $test_slice->{'952'} = 'Source cell 2';
+    $test_slice->{'953'} = 'Source cell 3';
+    $test_slice->{'960'} = 'Cell with no links';
+    $test_slice->{'951+d.1'} = '950'; $test_slice->{'950-d.1'} = '951';
+    $test_slice->{'952+d.2'} = '950'; $test_slice->{'950-d.2'} = '952';
+    $test_slice->{'953+d.clone'} = '950'; $test_slice->{'950-d.clone'} = '953';
+
     plan tests => 4;
     my @links_to_950 = sort(Zigzag::get_links_to('950'));
     is(scalar @links_to_950, 3, '(950): returns 3 links (using standard dimensions)');
@@ -288,4 +331,238 @@ subtest 'dimension_is_essential' => sub {
     ok( !Zigzag::dimension_is_essential('d.foo'), "d.foo is not essential");
     ok( !Zigzag::dimension_is_essential('+d.bar'), "+d.bar is not essential");
     ok( !Zigzag::dimension_is_essential('d.12'), "d.12 is not essential");
+};
+
+# --- Tests for cell_new ---
+subtest 'cell_new' => sub {
+    %$test_slice = Zigzag::initial_geometry();
+    plan tests => 14;
+
+    # Test Case 1: Create a new cell with default content.
+    my $new_cell_id_default = Zigzag::cell_new();
+    like($new_cell_id_default, qr/^\d+$/, "1.1: New cell ID ($new_cell_id_default) is a number");
+    ok(exists $test_slice->{$new_cell_id_default}, "1.2: New cell ($new_cell_id_default) exists in hash");
+    is($test_slice->{$new_cell_id_default}, "$new_cell_id_default", "1.3: New cell ($new_cell_id_default) content is its own ID by default");
+
+    # Test Case 2: Create a new cell with specified content.
+    my $custom_content = "custom content for cell_new";
+    my $new_cell_id_content = Zigzag::cell_new($custom_content);
+    like($new_cell_id_content, qr/^\d+$/, "2.1: New cell ID with content ($new_cell_id_content) is a number");
+    is($test_slice->{$new_cell_id_content}, $custom_content, "2.2: New cell ($new_cell_id_content) has specified content");
+
+    # Test Case 3: Create multiple new cells to ensure unique IDs.
+    # 'n' is initialized by initial_geometry() and managed by cell_new()
+    my $next_id_before_multi = $test_slice->{"n"};
+    my $cell_id1_multi = Zigzag::cell_new();
+    my $cell_id2_multi = Zigzag::cell_new();
+    isnt($cell_id1_multi, $cell_id2_multi, "3.1: Multiple new cell IDs ($cell_id1_multi, $cell_id2_multi) are different");
+    is($cell_id1_multi, $next_id_before_multi, "3.2: First new cell ID ($cell_id1_multi) is as expected ($next_id_before_multi)");
+    is($cell_id2_multi, $next_id_before_multi + 1, "3.3: Second new cell ID ($cell_id2_multi) is incremented from first");
+    is($test_slice->{"n"}, $next_id_before_multi + 2, "3.4: Global 'n' is updated correctly after multiple creations");
+
+    # Test Case 4: Recycle a cell.
+    my $DELETE_HOME = 99; # Defined in Zigzag.pm
+    my $recyclable_cell_id = '3010'; # Arbitrary high number for recycle test
+    $test_slice->{$recyclable_cell_id} = "Recyclable";
+
+    # Put $recyclable_cell_id onto the recycle pile (making it the only item)
+    $test_slice->{"${DELETE_HOME}-d.2"} = $recyclable_cell_id; # DELETE_HOME points to it
+    $test_slice->{"${recyclable_cell_id}+d.2"} = $DELETE_HOME; # It points back to DELETE_HOME
+    $test_slice->{"${recyclable_cell_id}-d.2"} = $DELETE_HOME; # It's the only one, so it's newest and oldest relative to DELETE_HOME
+
+    my $recycled_content = "New content for recycled cell";
+    my $recycled_cell_id_actual = Zigzag::cell_new($recycled_content);
+
+    is($recycled_cell_id_actual, $recyclable_cell_id, "4.1: Recycled cell ID ($recycled_cell_id_actual) is the expected one ($recyclable_cell_id)");
+    is($test_slice->{$recycled_cell_id_actual}, $recycled_content, "4.2: Recycled cell has new content");
+    is($test_slice->{"${DELETE_HOME}-d.2"}, $DELETE_HOME, "4.3: DELETE_HOME -d.2 link updated (points to self as pile is empty)");
+    is($test_slice->{"${recycled_cell_id_actual}+d.2"}, undef, "4.4: Recycled cell's +d.2 link is removed");
+    is($test_slice->{"${recycled_cell_id_actual}-d.2"}, undef, "4.5: Recycled cell's -d.2 link is removed");
+};
+
+# --- Tests for cell_excise ---
+subtest 'cell_excise' => sub {
+    %$test_slice = Zigzag::initial_geometry();
+    plan tests => 17;
+
+    my $dim = 'd.testex'; # Common dimension for most tests
+    my $cell_A = '4000'; my $cell_B = '4001'; my $cell_C = '4002';
+    my $cell_S = '4003'; # Standalone
+    my $cell_circA = '4004'; my $cell_circB = '4005'; my $dim_circ = 'd.testex_circ';
+
+    # Pre-define cells to ensure they exist for tests if not linked
+    $test_slice->{$cell_A} = 'Cell A'; $test_slice->{$cell_B} = 'Cell B'; $test_slice->{$cell_C} = 'Cell C';
+    $test_slice->{$cell_S} = 'Standalone Cell S';
+    $test_slice->{$cell_circA} = 'Circular Cell A'; $test_slice->{$cell_circB} = 'Circular Cell B';
+
+    # Test Case 1: Excise cell from middle of a 3-cell chain.
+    # A <--(d.testex)--> B <--(d.testex)--> C
+    Zigzag::link_make($cell_A, $cell_B, "+$dim");
+    Zigzag::link_make($cell_B, $cell_C, "+$dim");
+    Zigzag::cell_excise($cell_B, $dim);
+    is($test_slice->{"$cell_B+$dim"}, undef, "1.1: Excised cell B+$dim is undef");
+    is($test_slice->{"$cell_B-$dim"}, undef, "1.2: Excised cell B-$dim is undef");
+    is($test_slice->{"$cell_A+$dim"}, $cell_C, "1.3: Former prev A+$dim links to former next C");
+    is($test_slice->{"$cell_C-$dim"}, $cell_A, "1.4: Former next C-$dim links to former prev A");
+    # Cleanup for Test 1
+    delete $test_slice->{"$cell_A+$dim"}; delete $test_slice->{"$cell_C-$dim"};
+
+    # Test Case 2: Excise cell from beginning of a chain (has only +dim neighbor).
+    # B <--(d.testex)--> C
+    Zigzag::link_make($cell_B, $cell_C, "+$dim");
+    Zigzag::cell_excise($cell_B, $dim);
+    is($test_slice->{"$cell_B+$dim"}, undef, "2.1: Excised cell B+$dim (start of chain) is undef");
+    is($test_slice->{"$cell_B-$dim"}, undef, "2.2: Excised cell B-$dim (start of chain) is undef");
+    is($test_slice->{"$cell_C-$dim"}, undef, "2.3: Former next C-$dim (start of chain) is undef");
+    # Cleanup for Test 2 (C might still have links if not cleaned by excise fully, but B's are gone)
+    delete $test_slice->{"$cell_C+$dim"}; delete $test_slice->{"$cell_C-$dim"};
+
+    # Test Case 3: Excise cell from end of a chain (has only -dim neighbor).
+    # A <--(d.testex)--> B
+    Zigzag::link_make($cell_A, $cell_B, "+$dim");
+    Zigzag::cell_excise($cell_B, $dim);
+    is($test_slice->{"$cell_B+$dim"}, undef, "3.1: Excised cell B+$dim (end of chain) is undef");
+    is($test_slice->{"$cell_B-$dim"}, undef, "3.2: Excised cell B-$dim (end of chain) is undef");
+    is($test_slice->{"$cell_A+$dim"}, undef, "3.3: Former prev A+$dim (end of chain) is undef");
+    # Cleanup for Test 3
+    delete $test_slice->{"$cell_A+$dim"}; delete $test_slice->{"$cell_A-$dim"};
+
+    # Test Case 4: Excise standalone cell.
+    # Cell S ('4003') has no links in $dim.
+    Zigzag::cell_excise($cell_S, $dim); # Should not die
+    is($test_slice->{"$cell_S+$dim"}, undef, "4.1: Standalone cell S+$dim remains undef");
+    is($test_slice->{"$cell_S-$dim"}, undef, "4.2: Standalone cell S-$dim remains undef");
+    # No specific link cleanup needed as it was standalone in $dim
+
+    # Test Case 5: Excise cell from a 2-cell circular list.
+    # circA <--(dim_circ)--> circB <--(dim_circ)--> circA
+    Zigzag::link_make($cell_circA, $cell_circB, "+$dim_circ");
+    Zigzag::link_make($cell_circB, $cell_circA, "+$dim_circ"); # Complete the circle
+    Zigzag::cell_excise($cell_circA, $dim_circ);
+    is($test_slice->{"$cell_circA+$dim_circ"}, undef, "5.1: Excised cell circA+$dim_circ is undef");
+    is($test_slice->{"$cell_circA-$dim_circ"}, undef, "5.2: Excised cell circA-$dim_circ is undef");
+    is($test_slice->{"$cell_circB+$dim_circ"}, $cell_circB, "5.3: Neighbor circB+$dim_circ is self (was circA)");
+    is($test_slice->{"$cell_circB-$dim_circ"}, $cell_circB, "5.4: Neighbor circB-$dim_circ is self (was circA)");
+    # Cleanup for Test 5
+    delete $test_slice->{"$cell_circB+$dim_circ"}; delete $test_slice->{"$cell_circB-$dim_circ"};
+
+    # Test Case 6: Error - cell does not exist.
+    my $non_existent_cell = 'nonexistent_cell_excise';
+    eval { Zigzag::cell_excise($non_existent_cell, $dim); };
+    like($@, qr/No cell $non_existent_cell/, "6.1: Die when cell does not exist");
+};
+
+# --- Setup for link_make tests ---
+subtest 'link_make' => sub {
+    %$test_slice = Zigzag::initial_geometry();
+    plan tests => 7; # 2 for success, 5 for die cases
+
+    # Test 1: Successful link
+    $test_slice->{'1000'} = 'Cell 1000 for link_make';
+    $test_slice->{'1001'} = 'Cell 1001 for link_make';
+    $test_slice->{'1002'} = 'Cell 1002 for link_make';
+    Zigzag::link_make('1000', '1001', '+d.testlink');
+    is($test_slice->{'1000+d.testlink'}, '1001', "link_make: 1000+d.testlink is 1001");
+    is($test_slice->{'1001-d.testlink'}, '1000', "link_make: 1001-d.testlink is 1000");
+
+    # Test 2: Error case: $cell1 does not exist
+    eval { Zigzag::link_make('nonexistent1', '1002', '+d.testlink'); };
+    like($@, qr/No cell nonexistent1/, "link_make: die when cell1 does not exist");
+
+    # Test 3: Error case: $cell2 does not exist
+    eval { Zigzag::link_make('1000', 'nonexistent2', '+d.testlink'); };
+    like($@, qr/No cell nonexistent2/, "link_make: die when cell2 does not exist");
+
+    # Test 4: Error case: Invalid direction
+    eval { Zigzag::link_make('1000', '1002', 'd.invalid'); };
+    like($@, qr/Invalid direction d.invalid/, "link_make: die on invalid direction");
+
+    # Test 5: Error case: $cell1 already linked in $dir
+    # Cells 1000 and 1001 are already linked from Test 1.
+    $test_slice->{'1003'} = 'Cell 1003 for link_make';
+    eval { Zigzag::link_make('1000', '1003', '+d.testlink'); }; # 1000 already has +d.testlink to 1001
+    like($@, qr/1000 already linked/, "link_make: die when cell1 already linked");
+
+    # Test 6: Error case: $cell2 already linked in reverse_sign($dir)
+    # Per problem: Link '1002' ('X') and '1003' ('B') with '+d.testlink' ('+D').
+    # This creates B-D = X. ('1003-d.testlink' = '1002')
+    # Then attempt link_make('1004' ('A'), '1003' ('B'), '+d.testlink' ('+D')).
+    # This should fail because '1003-d.testlink' (B-D) is already set.
+    $test_slice->{'1002'} = 'Cell 1002 for link_make (X)'; # Renamed from original test plan for clarity
+    $test_slice->{'1003'} = 'Cell 1003 for link_make (B/cell2)'; # Re-used 1003, content updated
+    $test_slice->{'1004'} = 'Cell 1004 for link_make (A/cell1)';
+    Zigzag::link_make('1002', '1003', '+d.testlink_t6'); # X to B with +D
+    # Now 1003 is linked from 1002 via -d.testlink_t6 (1003-d.testlink_t6 = 1002)
+    eval { Zigzag::link_make('1004', '1003', '+d.testlink_t6'); }; # A to B with +D
+    like($@, qr/1003 already linked/, "link_make: die when cell2 already linked in reverse_sign(dir)");
+};
+
+# --- Setup for link_break tests ---
+subtest 'link_break' => sub {
+    %$test_slice = Zigzag::initial_geometry();
+    plan tests => 12; # 2x2 for success cases, 8 for die cases
+
+    # Setup cells for link_break tests
+    $test_slice->{'2000'} = 'Cell 2000 for link_break';
+    $test_slice->{'2001'} = 'Cell 2001 for link_break';
+    $test_slice->{'2002'} = 'Cell 2002 for link_break';
+    $test_slice->{'2003'} = 'Cell 2003 for link_break';
+    $test_slice->{'2004'} = 'Cell 2004 for link_break'; # For test 6
+    $test_slice->{'2005'} = 'Cell 2005 for link_break'; # For test 7
+    $test_slice->{'2006'} = 'Cell 2006 for link_break'; # For test 7
+    $test_slice->{'2007'} = 'Cell 2007 for link_break'; # For test 7
+    $test_slice->{'2008'} = 'Cell 2008 for link_break'; # For test 10
+
+    # Test 1: Successful break (3 arguments)
+    Zigzag::link_make('2000', '2001', '+d.testbreak_s3');
+    Zigzag::link_break('2000', '2001', '+d.testbreak_s3');
+    is($test_slice->{'2000+d.testbreak_s3'}, undef, "link_break(3 args): cell1 link is undef");
+    is($test_slice->{'2001-d.testbreak_s3'}, undef, "link_break(3 args): cell2 link is undef");
+
+    # Test 2: Successful break (2 arguments)
+    Zigzag::link_make('2002', '2003', '+d.testbreak_s2');
+    Zigzag::link_break('2002', '+d.testbreak_s2');
+    is($test_slice->{'2002+d.testbreak_s2'}, undef, "link_break(2 args): cell1 link is undef");
+    is($test_slice->{'2003-d.testbreak_s2'}, undef, "link_break(2 args): cell2 link is undef");
+
+    # Test 3: Error case (3 args): $cell1 does not exist
+    eval { Zigzag::link_break('nonexistent_lb1', '2001', '+d.testbreak_e1'); };
+    like($@, qr/nonexistent_lb1 has no link in direction \+d.testbreak_e1/, "link_break(3 args): die when cell1 does not exist (actual msg check)");
+
+    # Test 4: Error case (3 args): $cell2 does not exist
+    Zigzag::link_make('2000', '2001', '+d.testbreak_e2'); # Re-link for this test
+    eval { Zigzag::link_break('2000', 'nonexistent_lb2', '+d.testbreak_e2'); };
+    like($@, qr/2000 is not linked to nonexistent_lb2 in direction \+d.testbreak_e2/, "link_break(3 args): die when cell2 does not exist (actual msg check)");
+    Zigzag::link_break('2000', '+d.testbreak_e2'); # Clean up
+
+    # Test 5: Error case (3 args): Invalid direction
+    # Need to ensure cells are linked for this not to be caught by other checks first
+    Zigzag::link_make('2000', '2001', '+d.testbreak_e3');
+    eval { Zigzag::link_break('2000', '2001', 'd.invalid_lb'); };
+    like($@, qr/Invalid direction d.invalid_lb/, "link_break(3 args): die on invalid direction");
+    Zigzag::link_break('2000', '+d.testbreak_e3'); # Clean up
+
+    # Test 6: Error case (3 args): $cell1 has no link in $dir
+    eval { Zigzag::link_break('2004', '2000', '+d.testbreak_e4'); }; # 2004 is not linked
+    like($@, qr/2004 has no link in direction \+d.testbreak_e4/, "link_break(3 args): die when cell1 has no link in dir");
+
+    # Test 7: Error case (3 args): $cell1 not linked to $cell2 in $dir
+    Zigzag::link_make('2005', '2006', '+d.testbreak_e5'); # 2005 linked to 2006
+    # Cell 2007 is defined but 2005 is not linked to 2007
+    eval { Zigzag::link_break('2005', '2007', '+d.testbreak_e5'); };
+    like($@, qr/2005 is not linked to 2007 in direction \+d.testbreak_e5/, "link_break(3 args): die when cell1 not linked to cell2");
+    Zigzag::link_break('2005', '+d.testbreak_e5'); # Clean up
+
+    # Test 8: Error case (2 args): $cell1 does not exist
+    eval { Zigzag::link_break('nonexistent_lb3', '+d.testbreak_e6'); };
+    like($@, qr/nonexistent_lb3 has no link in direction \+d.testbreak_e6/, "link_break(2 args): die when cell1 does not exist (actual msg check)");
+
+    # Test 9: Error case (2 args): Invalid direction
+    # Need to ensure cell1 exists for this not to be caught by other checks
+    eval { Zigzag::link_break('2000', 'd.invalid_lb2'); };
+    like($@, qr/Invalid direction d.invalid_lb2/, "link_break(2 args): die on invalid direction");
+
+    # Test 10: Error case (2 args): $cell1 has no link in $dir
+    eval { Zigzag::link_break('2008', '+d.testbreak_e7'); }; # 2008 is not linked
+    like($@, qr/2008 has no link in direction \+d.testbreak_e7/, "link_break(2 args): die when cell1 has no link in dir");
 };

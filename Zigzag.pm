@@ -29,11 +29,11 @@
 # ===================== Change Log
 #
 # Inital Zigzag implementation
-# $Id: Zigzag.pm,v 0.71 2025/05/29 00:57:00 xanni Exp $
+# $Id: Zigzag.pm,v 0.71 2025/05/30 01:07:00 xanni Exp $
 #
 # $Log: Zigzag.pm,v $
-# Revision 0.71  2025/05/29 00:57:00  xanni
-# * Added unit tests and fixed bug in is_clone()
+# Revision 0.71  2025/05/30 01:07:00  xanni
+# * Added unit tests and fixed bugs in is_clone() and cell_new()
 #
 # Revision 0.70  1999/05/14 13:43:21  xanni
 # * Imported atcursor_edit from front end
@@ -1031,6 +1031,8 @@ sub cell_new(;$)
 
   # Assign contents of cell (defaults to the cell number)
   $Hash_Ref[0]{$new} = (defined $_[0]) ? $_[0] : $new;
+
+  return $new;
 }
 
 #
