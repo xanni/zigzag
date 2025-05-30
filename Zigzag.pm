@@ -33,7 +33,8 @@
 #
 # $Log: Zigzag.pm,v $
 # Revision 0.71  2025/05/30 01:07:00  xanni
-# * Added unit tests and fixed bugs in is_clone() and cell_new()
+# * Added unit tests and fixed bugs in is_clone(), dimension_rename()
+#   and cell_new()
 #
 # Revision 0.70  1999/05/14 13:43:21  xanni
 # * Imported atcursor_edit from front end
@@ -579,10 +580,13 @@ sub dimension_rename($$)
     print STDERR "Renaming dimension $d_orig to $d_new.  Please wait...";
     cell_set($cell, $d_new);
 
-    foreach (@Hash_Ref)
-    {
-      while (my ($key, $value) = each %$_)
-      { $key =~ s/$d_orig$/$d_new/; }
+    foreach my $slice_hash_ref (@Hash_Ref) {
+      my @keys_to_rename = grep { /\Q$d_orig\E$/ } keys %$slice_hash_ref;
+            
+      foreach my $old_key (@keys_to_rename) {
+          (my $new_key = $old_key) =~ s/\Q$d_orig\E$/$d_new/;
+          $slice_hash_ref->{$new_key} = delete $slice_hash_ref->{$old_key};
+      }
     }
     print STDERR "done.\n";
   }
