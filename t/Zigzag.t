@@ -785,7 +785,6 @@ subtest 'get_contained' => sub {
     $test_slice->{'401'} = 'InsideB';
     $test_slice->{'402'} = 'ContentsC';
     $test_slice->{'403'} = 'InsideD_PeerToB';
-    # $test_slice->{'404'} = 'ContentsE_ForD'; # Not explicitly used in links, but defined in plan
     $test_slice->{'405'} = 'NestedContainerF_UnderC';
     $test_slice->{'406'} = 'InsideG_InF';
     $test_slice->{'407'} = 'StandaloneH';
@@ -796,25 +795,18 @@ subtest 'get_contained' => sub {
 
     # Test Case 2: Simple `+d.inside` link.
     # A('400') -> B('401') (inside)
-    # Diagnostics from previous run confirmed link_make sets keys in $test_slice correctly.
-    # The issue is get_contained not seeing them.
     Zigzag::link_make('400', '401', '+d.inside');
     is_deeply([sort(Zigzag::get_contained('400'))], [sort ('400', '401')], "TC2: A('400') with B('401') +d.inside");
-    Zigzag::link_break('400', '+d.inside');
 
     # Test Case 3: `+d.inside` then `+d.contents`.
     # A('400') -> B('401') (inside), B('401') -> C('402') (contents)
-    Zigzag::link_make('400', '401', '+d.inside');
     Zigzag::link_make('401', '402', '+d.contents');
     is_deeply([sort(Zigzag::get_contained('400'))], [sort ('400', '401', '402')], "TC3: A->B(+d.inside), B->C(+d.contents)");
-    Zigzag::link_break('400', '+d.inside');
     Zigzag::link_break('401', '+d.contents'); # Cleanup
 
     # Test Case 4: A contains B, and B contains D (both via `+d.inside`).
-    Zigzag::link_make('400', '401', '+d.inside');
     Zigzag::link_make('401', '403', '+d.inside'); # B contains D
     is_deeply([sort(Zigzag::get_contained('400'))], [sort ('400', '401', '403')], "TC4: A->B(+d.inside), B->D(+d.inside)");
-    Zigzag::link_break('400', '+d.inside');
     Zigzag::link_break('401', '+d.inside'); # Cleanup
 
     # Test Case 5: Nested structure.
@@ -822,34 +814,26 @@ subtest 'get_contained' => sub {
     # B('401') -> C('402') (+d.contents)
     # C('402') -> F('405') (+d.inside)
     # F('405') -> G('406') (+d.inside)
-    Zigzag::link_make('400', '401', '+d.inside');
     Zigzag::link_make('401', '402', '+d.contents');
     Zigzag::link_make('402', '405', '+d.inside');
     Zigzag::link_make('405', '406', '+d.inside');
     is_deeply([sort(Zigzag::get_contained('400'))], [sort ('400', '401', '402', '405', '406')], "TC5: Nested A->B(i), B->C(c), C->F(i), F->G(i)");
-    Zigzag::link_break('400', '+d.inside');
     Zigzag::link_break('401', '+d.contents');
     Zigzag::link_break('402', '+d.inside');
     Zigzag::link_break('405', '+d.inside'); # Cleanup
 
     # Test Case 6: Circular `+d.inside` reference.
     # A ('400') -> B ('401') (inside), B ('401') -> A ('400') (inside)
-    Zigzag::link_make('400', '401', '+d.inside');
     Zigzag::link_make('401', '400', '+d.inside'); # Circular link
     is_deeply([sort(Zigzag::get_contained('400'))], [sort ('400', '401')], "TC6: Circular +d.inside: A->B, B->A");
-    delete $test_slice->{'400+d.inside'}; delete $test_slice->{'401-d.inside'};
     delete $test_slice->{'401+d.inside'}; delete $test_slice->{'400-d.inside'}; # Cleanup
 
     # Test Case 7: Circular `+d.contents` reference.
     # A('400') -> B('401') (inside)
     # B('401') -> C('402') (contents), C('402') -> B('401') (contents)
-    Zigzag::link_make('400', '401', '+d.inside');
     Zigzag::link_make('401', '402', '+d.contents');
     Zigzag::link_make('402', '401', '+d.contents'); # Circular link
     is_deeply([sort(Zigzag::get_contained('400'))], [sort ('400', '401', '402')], "TC7: Circular +d.contents: A->B(i), B->C(c), C->B(c)");
-    Zigzag::link_break('400', '+d.inside');
-    delete $test_slice->{'401+d.contents'}; delete $test_slice->{'402-d.contents'};
-    delete $test_slice->{'402+d.contents'}; delete $test_slice->{'401-d.contents'}; # Cleanup
 
     # Test Case 8: Start cell does not exist.
     is_deeply([sort(Zigzag::get_contained('nonexistent_cell_gc'))], [sort ('nonexistent_cell_gc')], "TC8: get_contained on non-existent cell returns cell itself in list");
