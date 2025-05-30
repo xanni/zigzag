@@ -460,8 +460,7 @@ subtest 'cell_excise' => sub {
     is($test_slice->{"$cell_B-$dim"}, undef, "1.2: Excised cell B-$dim is undef");
     is($test_slice->{"$cell_A+$dim"}, $cell_C, "1.3: Former prev A+$dim links to former next C");
     is($test_slice->{"$cell_C-$dim"}, $cell_A, "1.4: Former next C-$dim links to former prev A");
-    # Cleanup for Test 1
-    delete $test_slice->{"$cell_A+$dim"}; delete $test_slice->{"$cell_C-$dim"};
+    Zigzag::link_break($cell_A, "+$dim");    # Cleanup for Test 1
 
     # Test Case 2: Excise cell from beginning of a chain (has only +dim neighbor).
     # B <--(d.testex)--> C
@@ -470,8 +469,6 @@ subtest 'cell_excise' => sub {
     is($test_slice->{"$cell_B+$dim"}, undef, "2.1: Excised cell B+$dim (start of chain) is undef");
     is($test_slice->{"$cell_B-$dim"}, undef, "2.2: Excised cell B-$dim (start of chain) is undef");
     is($test_slice->{"$cell_C-$dim"}, undef, "2.3: Former next C-$dim (start of chain) is undef");
-    # Cleanup for Test 2 (C might still have links if not cleaned by excise fully, but B's are gone)
-    delete $test_slice->{"$cell_C+$dim"}; delete $test_slice->{"$cell_C-$dim"};
 
     # Test Case 3: Excise cell from end of a chain (has only -dim neighbor).
     # A <--(d.testex)--> B
@@ -480,8 +477,6 @@ subtest 'cell_excise' => sub {
     is($test_slice->{"$cell_B+$dim"}, undef, "3.1: Excised cell B+$dim (end of chain) is undef");
     is($test_slice->{"$cell_B-$dim"}, undef, "3.2: Excised cell B-$dim (end of chain) is undef");
     is($test_slice->{"$cell_A+$dim"}, undef, "3.3: Former prev A+$dim (end of chain) is undef");
-    # Cleanup for Test 3
-    delete $test_slice->{"$cell_A+$dim"}; delete $test_slice->{"$cell_A-$dim"};
 
     # Test Case 4: Excise standalone cell.
     # Cell S ('4003') has no links in $dim.
@@ -499,8 +494,6 @@ subtest 'cell_excise' => sub {
     is($test_slice->{"$cell_circA-$dim_circ"}, undef, "5.2: Excised cell circA-$dim_circ is undef");
     is($test_slice->{"$cell_circB+$dim_circ"}, $cell_circB, "5.3: Neighbor circB+$dim_circ is self (was circA)");
     is($test_slice->{"$cell_circB-$dim_circ"}, $cell_circB, "5.4: Neighbor circB-$dim_circ is self (was circA)");
-    # Cleanup for Test 5
-    delete $test_slice->{"$cell_circB+$dim_circ"}; delete $test_slice->{"$cell_circB-$dim_circ"};
 
     # Test Case 6: Error - cell does not exist.
     my $non_existent_cell = 'nonexistent_cell_excise';
@@ -743,26 +736,16 @@ subtest 'is_selected and is_active_selected' => sub {
     ok(Zigzag::is_active_selected('300'), "Cell 300 is active_selected");
 
     # Cleanup for Test Case 2
-    delete $test_slice->{"${SELECT_HOME}+d.mark"}; delete $test_slice->{'300-d.mark'};
-    delete $test_slice->{'300+d.mark'};       delete $test_slice->{"${SELECT_HOME}-d.mark"};
+    Zigzag::link_break('300', '+d.mark');
 
     # Test Case 3: Cell in a non-active (saved) selection.
     # Create a new selection head '301' and link it into the selection list (making it non-active)
     # SELECT_HOME(+d.2) -> 301, 301(-d.2) -> SELECT_HOME
     # 301(+d.2) -> SELECT_HOME, SELECT_HOME(-d.2) -> 301 (circular list of selection heads)
-    my $original_select_home_plus_d2 = $test_slice->{"${SELECT_HOME}+d.2"};
-    my $original_select_home_minus_d2 = $test_slice->{"${SELECT_HOME}-d.2"};
-    my $original_cell_at_plus_d2_minus_d2; # If SELECT_HOME+d.2 pointed somewhere.
-    if (defined $original_select_home_plus_d2 && exists $test_slice->{"${original_select_home_plus_d2}-d.2"}) {
-        $original_cell_at_plus_d2_minus_d2 = $test_slice->{"${original_select_home_plus_d2}-d.2"};
-    }
-
-
     $test_slice->{"${SELECT_HOME}+d.2"} = '301';
     $test_slice->{'301-d.2'} = $SELECT_HOME;
     $test_slice->{'301+d.2'} = $SELECT_HOME; # For simplicity, make it a 2-item list with SELECT_HOME
     $test_slice->{"${SELECT_HOME}-d.2"} = '301';
-
 
     # Link '300' to this new selection head '301'
     $test_slice->{'301+d.mark'} = '300'; $test_slice->{'300-d.mark'} = '301';
