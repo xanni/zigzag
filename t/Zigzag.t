@@ -22,7 +22,7 @@ subtest 'is_cursor' => sub {
     $test_slice->{'100'} = 'Cell 100 (cursor)';
     $test_slice->{'101'} = 'Cell 101 (target for cursor link)';
     $test_slice->{'102'} = 'Cell 102 (not a cursor)';
-    $test_slice->{'100+d.cursor'} = '101'; $test_slice->{'101-d.cursor'} = '100';
+    Zigzag::link_make('100', '101', '+d.cursor');
 
     plan tests => 2;
     ok( Zigzag::is_cursor('100'), 'cell 100 is a cursor (returns 1)');
@@ -34,11 +34,11 @@ subtest 'is_clone' => sub {
 
     $test_slice->{'200'} = 'Cell 200 (clone via -d.clone)';
     $test_slice->{'299'} = 'Helper cell for 200-d.clone link'; 
-    $test_slice->{'200-d.clone'} = '299'; $test_slice->{'299+d.clone'} = '200'; 
+    Zigzag::link_make('299', '200', '+d.clone'); # Equivalent to 200-d.clone = 299
 
     $test_slice->{'201'} = 'Cell 201 (clone via +d.clone)';
     $test_slice->{'298'} = 'Helper cell for 201+d.clone link'; 
-    $test_slice->{'201+d.clone'} = '298'; $test_slice->{'298-d.clone'} = '201';
+    Zigzag::link_make('201', '298', '+d.clone');
 
     $test_slice->{'202'} = 'Cell 202 (not a clone)';
 
@@ -87,9 +87,9 @@ subtest 'get_active_selection' => sub {
     $test_slice->{'401'} = 'Cell 401 for active selection';
 
     # Active selection (selection 0, around $SELECT_HOME)
-    $test_slice->{"${SELECT_HOME}+d.mark"} = '400'; $test_slice->{'400-d.mark'} = $SELECT_HOME;
-    $test_slice->{'400+d.mark'} = '401';           $test_slice->{'401-d.mark'} = '400';
-    $test_slice->{'401+d.mark'} = $SELECT_HOME;    $test_slice->{"${SELECT_HOME}-d.mark"} = '401'; # Cycle complete
+    Zigzag::link_make($SELECT_HOME, '400', '+d.mark');
+    Zigzag::link_make('400', '401', '+d.mark');
+    Zigzag::link_make('401', $SELECT_HOME, '+d.mark'); # Cycle complete
 
     plan tests => 1;
     is_deeply( [Zigzag::get_active_selection()], ['400', '401', $SELECT_HOME], 'returns cells 400, 401, and 21');
@@ -157,16 +157,16 @@ subtest 'get_lastcell' => sub {
     $test_slice->{'500'} = 'Cell 500 (start of linear chain)';
     $test_slice->{'501'} = 'Cell 501 (middle of linear chain)';
     $test_slice->{'502'} = 'Cell 502 (end of linear chain)';
-    $test_slice->{'500+d.testchain'} = '501'; $test_slice->{'501-d.testchain'} = '500';
-    $test_slice->{'501+d.testchain'} = '502'; $test_slice->{'502-d.testchain'} = '501';
+    Zigzag::link_make('500', '501', '+d.testchain');
+    Zigzag::link_make('501', '502', '+d.testchain');
 
     # Circular list: 600 <-> 601 <-> 602 <-> 600 in d.testcircle
     $test_slice->{'600'} = 'Cell 600 (part of circular list)';
     $test_slice->{'601'} = 'Cell 601 (part of circular list)';
     $test_slice->{'602'} = 'Cell 602 (part of circular list)';
-    $test_slice->{'600+d.testcircle'} = '601'; $test_slice->{'601-d.testcircle'} = '600';
-    $test_slice->{'601+d.testcircle'} = '602'; $test_slice->{'602-d.testcircle'} = '601';
-    $test_slice->{'602+d.testcircle'} = '600'; $test_slice->{'600-d.testcircle'} = '602';
+    Zigzag::link_make('600', '601', '+d.testcircle');
+    Zigzag::link_make('601', '602', '+d.testcircle');
+    Zigzag::link_make('602', '600', '+d.testcircle');
 
     plan tests => 4;
     # Linear chain tests
@@ -185,8 +185,8 @@ subtest 'get_distance' => sub {
     $test_slice->{'702'} = 'Cell 702 for get_distance';
     $test_slice->{'705'} = 'Cell 705 for get_distance (isolated)';
     # Chain: 700 <-> 701 <-> 702 in +d.testdist
-    $test_slice->{'700+d.testdist'} = '701'; $test_slice->{'701-d.testdist'} = '700';
-    $test_slice->{'701+d.testdist'} = '702'; $test_slice->{'702-d.testdist'} = '701';
+    Zigzag::link_make('700', '701', '+d.testdist');
+    Zigzag::link_make('701', '702', '+d.testdist');
 
     plan tests => 7;
     is( Zigzag::get_distance('700', '+d.testdist', '702'), 2, "('700', '+d.testdist', '702') is 2");
@@ -207,17 +207,17 @@ subtest 'get_outline_parent' => sub {
     $test_slice->{'803'} = 'Cell 803 (unrelated for outline parent)'; # Not used by links, just defined
 
     # Case 1: 800 has parent 801 via 802
-    $test_slice->{'800-d.2'} = '802'; $test_slice->{'802+d.2'} = '800';
-    $test_slice->{'802-d.1'} = '801'; $test_slice->{'801+d.1'} = '802';
+    Zigzag::link_make('802', '800', '+d.2'); # 800-d.2 = 802
+    Zigzag::link_make('801', '802', '+d.1'); # 802-d.1 = 801
 
     # Case 2: 801 is its own "outline parent" (no -d.2 path to another -d.1)
-    $test_slice->{'801-d.2'} = '801'; $test_slice->{'801+d.2'} = '801'; # Loop on itself in -d.2
+    Zigzag::link_make('801', '801', '+d.2'); # Loop on itself in -d.2
 
     # Case 3: 810 has no outline parent (circular -d.2 chain without -d.1)
     $test_slice->{'810'} = 'Cell 810 (no outline parent)';
     $test_slice->{'811'} = 'Cell 811 (part of 810s -d.2 loop)';
-    $test_slice->{'810-d.2'} = '811'; $test_slice->{'811+d.2'} = '810';
-    $test_slice->{'811-d.2'} = '810'; $test_slice->{'810+d.2'} = '811';
+    Zigzag::link_make('811', '810', '+d.2'); # 810-d.2 = 811
+    Zigzag::link_make('810', '811', '+d.2'); # 811-d.2 = 810
 
     plan tests => 3;
     is( Zigzag::get_outline_parent('800'), '801', "('800') is '801'");
@@ -231,11 +231,11 @@ subtest 'get_cell_contents' => sub {
     $test_slice->{'850'} = 'Direct content for 850';
     $test_slice->{'851'} = 'Cell 851 (clone of 852)'; # This content is just a note
     $test_slice->{'852'} = 'Content from original cell 852';
-    $test_slice->{'851-d.clone'} = '852'; $test_slice->{'852+d.clone'} = '851';
+    Zigzag::link_make('852', '851', '+d.clone'); # Equivalent to 851-d.clone = 852
 
     $test_slice->{'853'} = 'Cell 853 (clone of 854)'; # This content is just a note
     $test_slice->{'854'} = 'Content from original cell 854';
-    $test_slice->{'853+d.clone'} = '854'; $test_slice->{'854-d.clone'} = '853';
+    Zigzag::link_make('853', '854', '+d.clone');
 
     $test_slice->{'855'} = '[10+20]'; # Special ZZMail-like content
 
@@ -252,8 +252,7 @@ subtest 'get_cursor' => sub {
     # initial_geometry provides cursor 0 (11) and cursor 1 (16)
     # $CURSOR_HOME (10) -> 11 (cursor 0) -> 16 (cursor 1)
     $test_slice->{'900'} = 'Test Cursor 2';
-    $test_slice->{'16+d.2'} = '900'; # Link from cursor 1 (cell 16) to cursor 2 (cell 900)
-    $test_slice->{'900-d.2'} = '16'; # Bidirectional link
+    Zigzag::link_make('16', '900', '+d.2'); # Link from cursor 1 (cell 16) to cursor 2 (cell 900)
     # Cell 900 has no '+d.2' link, marking the end of the explicit cursor chain for testing die condition
 
     plan tests => 4;
@@ -297,9 +296,9 @@ subtest 'get_links_to' => sub {
     $test_slice->{'952'} = 'Source cell 2';
     $test_slice->{'953'} = 'Source cell 3';
     $test_slice->{'960'} = 'Cell with no links';
-    $test_slice->{'951+d.1'} = '950'; $test_slice->{'950-d.1'} = '951';
-    $test_slice->{'952+d.2'} = '950'; $test_slice->{'950-d.2'} = '952';
-    $test_slice->{'953+d.clone'} = '950'; $test_slice->{'950-d.clone'} = '953';
+    Zigzag::link_make('951', '950', '+d.1');
+    Zigzag::link_make('952', '950', '+d.2');
+    Zigzag::link_make('953', '950', '+d.clone');
 
     plan tests => 4;
     my @links_to_950 = sort(Zigzag::get_links_to('950'));
@@ -340,12 +339,11 @@ subtest 'dimension_rename' => sub {
     # Populate with initial data
     $test_slice->{'1'} = 'd.oldname';       # Dimension cell to be renamed
     $test_slice->{'10'} = 'Cursor home';    # CURSOR_HOME
-    $test_slice->{'10+d.1'} = '1';          # Link CURSOR_HOME to dimension cell
+    Zigzag::link_make('10', '1', '+d.1');  # Link CURSOR_HOME to dimension cell
 
     $test_slice->{'100'} = 'Cell 100';
     $test_slice->{'101'} = 'Cell 101';
-    $test_slice->{'100+d.oldname'} = '101'; # Link using the old dimension name
-    $test_slice->{'101-d.oldname'} = '100'; # Reverse link
+    Zigzag::link_make('100', '101', '+d.oldname'); # Link using the old dimension name
 
     $test_slice->{'n'} = 200;               # Next cell ID counter
 
@@ -383,8 +381,7 @@ subtest 'dimension_rename' => sub {
     $test_slice->{'2'} = 'd.existingname';
     # Proper linking for dimension_find: '1' is head of list from CURSOR_HOME+d.1
     # '2' is next in d.2 chain from '1'.
-    $test_slice->{'1+d.2'} = '2'; 
-    $test_slice->{'2-d.2'} = '1';
+    Zigzag::link_make('1', '2', '+d.2');
 
     Zigzag::dimension_rename('d.newname', 'd.existingname'); # This call should do nothing as d.existingname already exists
     
@@ -788,6 +785,7 @@ subtest 'get_contained' => sub {
     $test_slice->{'401'} = 'InsideB';
     $test_slice->{'402'} = 'ContentsC';
     $test_slice->{'403'} = 'InsideD_PeerToB';
+    # $test_slice->{'404'} = 'ContentsE_ForD'; # Not explicitly used in links, but defined in plan
     $test_slice->{'405'} = 'NestedContainerF_UnderC';
     $test_slice->{'406'} = 'InsideG_InF';
     $test_slice->{'407'} = 'StandaloneH';
@@ -798,18 +796,25 @@ subtest 'get_contained' => sub {
 
     # Test Case 2: Simple `+d.inside` link.
     # A('400') -> B('401') (inside)
+    # Diagnostics from previous run confirmed link_make sets keys in $test_slice correctly.
+    # The issue is get_contained not seeing them.
     Zigzag::link_make('400', '401', '+d.inside');
     is_deeply([sort(Zigzag::get_contained('400'))], [sort ('400', '401')], "TC2: A('400') with B('401') +d.inside");
+    Zigzag::link_break('400', '+d.inside');
 
     # Test Case 3: `+d.inside` then `+d.contents`.
     # A('400') -> B('401') (inside), B('401') -> C('402') (contents)
+    Zigzag::link_make('400', '401', '+d.inside');
     Zigzag::link_make('401', '402', '+d.contents');
     is_deeply([sort(Zigzag::get_contained('400'))], [sort ('400', '401', '402')], "TC3: A->B(+d.inside), B->C(+d.contents)");
+    Zigzag::link_break('400', '+d.inside');
     Zigzag::link_break('401', '+d.contents'); # Cleanup
 
     # Test Case 4: A contains B, and B contains D (both via `+d.inside`).
+    Zigzag::link_make('400', '401', '+d.inside');
     Zigzag::link_make('401', '403', '+d.inside'); # B contains D
     is_deeply([sort(Zigzag::get_contained('400'))], [sort ('400', '401', '403')], "TC4: A->B(+d.inside), B->D(+d.inside)");
+    Zigzag::link_break('400', '+d.inside');
     Zigzag::link_break('401', '+d.inside'); # Cleanup
 
     # Test Case 5: Nested structure.
@@ -817,26 +822,34 @@ subtest 'get_contained' => sub {
     # B('401') -> C('402') (+d.contents)
     # C('402') -> F('405') (+d.inside)
     # F('405') -> G('406') (+d.inside)
+    Zigzag::link_make('400', '401', '+d.inside');
     Zigzag::link_make('401', '402', '+d.contents');
     Zigzag::link_make('402', '405', '+d.inside');
     Zigzag::link_make('405', '406', '+d.inside');
     is_deeply([sort(Zigzag::get_contained('400'))], [sort ('400', '401', '402', '405', '406')], "TC5: Nested A->B(i), B->C(c), C->F(i), F->G(i)");
+    Zigzag::link_break('400', '+d.inside');
     Zigzag::link_break('401', '+d.contents');
     Zigzag::link_break('402', '+d.inside');
     Zigzag::link_break('405', '+d.inside'); # Cleanup
 
     # Test Case 6: Circular `+d.inside` reference.
     # A ('400') -> B ('401') (inside), B ('401') -> A ('400') (inside)
+    Zigzag::link_make('400', '401', '+d.inside');
     Zigzag::link_make('401', '400', '+d.inside'); # Circular link
     is_deeply([sort(Zigzag::get_contained('400'))], [sort ('400', '401')], "TC6: Circular +d.inside: A->B, B->A");
+    delete $test_slice->{'400+d.inside'}; delete $test_slice->{'401-d.inside'};
     delete $test_slice->{'401+d.inside'}; delete $test_slice->{'400-d.inside'}; # Cleanup
 
     # Test Case 7: Circular `+d.contents` reference.
     # A('400') -> B('401') (inside)
     # B('401') -> C('402') (contents), C('402') -> B('401') (contents)
+    Zigzag::link_make('400', '401', '+d.inside');
     Zigzag::link_make('401', '402', '+d.contents');
     Zigzag::link_make('402', '401', '+d.contents'); # Circular link
     is_deeply([sort(Zigzag::get_contained('400'))], [sort ('400', '401', '402')], "TC7: Circular +d.contents: A->B(i), B->C(c), C->B(c)");
+    Zigzag::link_break('400', '+d.inside');
+    delete $test_slice->{'401+d.contents'}; delete $test_slice->{'402-d.contents'};
+    delete $test_slice->{'402+d.contents'}; delete $test_slice->{'401-d.contents'}; # Cleanup
 
     # Test Case 8: Start cell does not exist.
     is_deeply([sort(Zigzag::get_contained('nonexistent_cell_gc'))], [sort ('nonexistent_cell_gc')], "TC8: get_contained on non-existent cell returns cell itself in list");
