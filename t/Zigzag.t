@@ -839,7 +839,6 @@ subtest 'dimension_home' => sub {
 };
 
 subtest 'cells_row' => sub {
-    # Reset to initial_geometry and then add specific cells for this test
     %$test_slice = Zigzag::initial_geometry();
 
     # Define cells for testing
@@ -848,8 +847,7 @@ subtest 'cells_row' => sub {
     $test_slice->{'102'} = 'Cell 102 for cells_row';
     $test_slice->{'103'} = 'Cell 103 for cells_row (single)';
 
-    my $dim_linear = '+d.testlinear_cr'; # Appended _cr to avoid potential collision
-    my $dim_circular = '+d.testcircular_cr'; # Appended _cr to avoid potential collision
+    my ($dim_linear, $dim_circular) = ('+d.testlinear', '+d.testcircular');
 
     # Linear chain: 100 -> 101 -> 102
     Zigzag::link_make('100', '101', $dim_linear);
@@ -880,12 +878,10 @@ subtest 'cells_row' => sub {
 };
 
 subtest 'cell_insert' => sub {
-    my $dim = '+d.testinsert';
-    my $rev_dim = '-d.testinsert';
+    my ($dim, $rev_dim) = ('+d.testinsert', '-d.testinsert');
 
     # Define cell IDs at a scope visible to all test sections
-    my $cellA = '5000'; my $cellB = '5001'; my $cellC = '5002';
-    my $cellD = '5003'; my $cellE = '5004';
+    my ($cellA, $cellB, $cellC, $cellD, $cellE) = '5000' .. '5004';
 
     plan tests => 30;
 
