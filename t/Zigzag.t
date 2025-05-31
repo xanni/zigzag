@@ -1,7 +1,16 @@
 use strict;
 use warnings;
 use lib '.'; # To find Zigzag.pm when run from the project directory
-use Test::More tests => 27;
+use Test::More tests => 31;
+
+# Mock user_error for testing purposes, as it's usually provided by the front-end
+BEGIN {
+    *main::user_error = sub {
+        my ($error_code, $message) = @_;
+        # The tests expect the message part to be in $@
+        die $message;
+    };
+}
 
 # Ensure the Zigzag module loads
 BEGIN { use_ok('Zigzag'); }
@@ -352,7 +361,7 @@ subtest 'dimension_rename' => sub {
     # No other dimensions initially, so '1+d.2' and '1-d.2' can be self-referential or point to '1'
     # to signify it's the only one in the list connected to CURSOR_HOME's +d.1 path.
 
-    plan tests => 14; # Updated count
+    plan tests => 14;
 
     # 1. Call dimension_rename
     Zigzag::dimension_rename('d.oldname', 'd.newname');
@@ -615,8 +624,8 @@ subtest 'link_break' => sub {
 };
 
 subtest 'dimension_find' => sub {
-    plan tests => 9;
     %$test_slice = Zigzag::initial_geometry();
+    plan tests => 9;
 
     # CURSOR_HOME is 10. dimension_home() should return the cell linked via +d.1 from CURSOR_HOME.
     # In initial_geometry, 10+d.1 -> 1. So, dimension_home() returns 1.
@@ -658,8 +667,8 @@ subtest 'dimension_find' => sub {
 };
 
 subtest 'cell_find' => sub {
-    plan tests => 13;
     %$test_slice = Zigzag::initial_geometry(); # Fresh slice
+    plan tests => 13;
 
     # Setup cells for testing
     $test_slice->{'1000'} = 'ContentA';
@@ -716,8 +725,8 @@ subtest 'cell_find' => sub {
 };
 
 subtest 'is_selected and is_active_selected' => sub {
-    plan tests => 8;
     %$test_slice = Zigzag::initial_geometry();
+    plan tests => 8;
     my $SELECT_HOME = 21; # From Zigzag.pm constants
 
     $test_slice->{'300'} = 'SelectableCell';
@@ -760,8 +769,8 @@ subtest 'is_selected and is_active_selected' => sub {
 };
 
 subtest 'get_contained' => sub {
+    %$test_slice = Zigzag::initial_geometry();
     plan tests => 8;
-    %$test_slice = Zigzag::initial_geometry(); # Standard setup
 
     # Define cells
     $test_slice->{'400'} = 'ContainerA';
@@ -774,22 +783,22 @@ subtest 'get_contained' => sub {
 
 
     # Test Case 1: Single cell, no containment links.
-    is_deeply([sort(Zigzag::get_contained('407'))], [sort ('407')], "TC1: get_contained on standalone cell '407' returns itself");
+    is_deeply([sort(Zigzag::get_contained('407'))], ['407'], "1: get_contained on standalone cell '407' returns itself");
 
     # Test Case 2: Simple `+d.inside` link.
     # A('400') -> B('401') (inside)
     Zigzag::link_make('400', '401', '+d.inside');
-    is_deeply([sort(Zigzag::get_contained('400'))], [sort ('400', '401')], "TC2: A('400') with B('401') +d.inside");
+    is_deeply([sort(Zigzag::get_contained('400'))], [qw(400 401)], "2: A('400') with B('401') +d.inside");
 
     # Test Case 3: `+d.inside` then `+d.contents`.
     # A('400') -> B('401') (inside), B('401') -> C('402') (contents)
     Zigzag::link_make('401', '402', '+d.contents');
-    is_deeply([sort(Zigzag::get_contained('400'))], [sort ('400', '401', '402')], "TC3: A->B(+d.inside), B->C(+d.contents)");
+    is_deeply([sort(Zigzag::get_contained('400'))], [qw(400 401 402)], "3: A->B(+d.inside), B->C(+d.contents)");
     Zigzag::link_break('401', '+d.contents'); # Cleanup
 
     # Test Case 4: A contains B, and B contains D (both via `+d.inside`).
     Zigzag::link_make('401', '403', '+d.inside'); # B contains D
-    is_deeply([sort(Zigzag::get_contained('400'))], [sort ('400', '401', '403')], "TC4: A->B(+d.inside), B->D(+d.inside)");
+    is_deeply([sort(Zigzag::get_contained('400'))], [qw(400 401 403)], "4: A->B(+d.inside), B->D(+d.inside)");
     Zigzag::link_break('401', '+d.inside'); # Cleanup
 
     # Test Case 5: Nested structure.
@@ -800,7 +809,7 @@ subtest 'get_contained' => sub {
     Zigzag::link_make('401', '402', '+d.contents');
     Zigzag::link_make('402', '405', '+d.inside');
     Zigzag::link_make('405', '406', '+d.inside');
-    is_deeply([sort(Zigzag::get_contained('400'))], [sort ('400', '401', '402', '405', '406')], "TC5: Nested A->B(i), B->C(c), C->F(i), F->G(i)");
+    is_deeply([sort(Zigzag::get_contained('400'))], [qw(400 401 402 405 406)], "5: Nested A->B(i), B->C(c), C->F(i), F->G(i)");
     Zigzag::link_break('401', '+d.contents');
     Zigzag::link_break('402', '+d.inside');
     Zigzag::link_break('405', '+d.inside'); # Cleanup
@@ -808,7 +817,7 @@ subtest 'get_contained' => sub {
     # Test Case 6: Circular `+d.inside` reference.
     # A ('400') -> B ('401') (inside), B ('401') -> A ('400') (inside)
     Zigzag::link_make('401', '400', '+d.inside'); # Circular link
-    is_deeply([sort(Zigzag::get_contained('400'))], [sort ('400', '401')], "TC6: Circular +d.inside: A->B, B->A");
+    is_deeply([sort(Zigzag::get_contained('400'))], [qw(400 401)], "6: Circular +d.inside: A->B, B->A");
     delete $test_slice->{'401+d.inside'}; delete $test_slice->{'400-d.inside'}; # Cleanup
 
     # Test Case 7: Circular `+d.contents` reference.
@@ -816,8 +825,213 @@ subtest 'get_contained' => sub {
     # B('401') -> C('402') (contents), C('402') -> B('401') (contents)
     Zigzag::link_make('401', '402', '+d.contents');
     Zigzag::link_make('402', '401', '+d.contents'); # Circular link
-    is_deeply([sort(Zigzag::get_contained('400'))], [sort ('400', '401', '402')], "TC7: Circular +d.contents: A->B(i), B->C(c), C->B(c)");
+    is_deeply([sort(Zigzag::get_contained('400'))], [qw(400 401 402)], "7: Circular +d.contents: A->B(i), B->C(c), C->B(c)");
 
     # Test Case 8: Start cell does not exist.
-    is_deeply([sort(Zigzag::get_contained('nonexistent_cell_gc'))], [sort ('nonexistent_cell_gc')], "TC8: get_contained on non-existent cell returns cell itself in list");
+    is_deeply([sort(Zigzag::get_contained('nonexistent_cell_gc'))], ['nonexistent_cell_gc'], "8: get_contained on non-existent cell returns cell itself in list");
+};
+
+subtest 'dimension_home' => sub {
+    plan tests => 1;
+    %$test_slice = Zigzag::initial_geometry();
+
+    is( Zigzag::dimension_home(), 1, "dimension_home() returns cell 1 (10+d.1 from initial_geometry)");
+};
+
+subtest 'cells_row' => sub {
+    %$test_slice = Zigzag::initial_geometry();
+
+    # Define cells for testing
+    $test_slice->{'100'} = 'Cell 100 for cells_row';
+    $test_slice->{'101'} = 'Cell 101 for cells_row';
+    $test_slice->{'102'} = 'Cell 102 for cells_row';
+    $test_slice->{'103'} = 'Cell 103 for cells_row (single)';
+
+    my ($dim_linear, $dim_circular) = ('+d.testlinear', '+d.testcircular');
+
+    # Linear chain: 100 -> 101 -> 102
+    Zigzag::link_make('100', '101', $dim_linear);
+    Zigzag::link_make('101', '102', $dim_linear);
+
+    # Circular list: 200 -> 201 -> 202 -> 200
+    $test_slice->{'200'} = 'Cell 200 for cells_row circular';
+    $test_slice->{'201'} = 'Cell 201 for cells_row circular';
+    $test_slice->{'202'} = 'Cell 202 for cells_row circular';
+    Zigzag::link_make('200', '201', $dim_circular);
+    Zigzag::link_make('201', '202', $dim_circular);
+    Zigzag::link_make('202', '200', $dim_circular); # Completes the circle
+
+    plan tests => 8;
+    is_deeply( [sort(Zigzag::cells_row('100', $dim_linear))], [qw(100 101 102)], "Linear chain from start");
+    is_deeply( [sort(Zigzag::cells_row('101', $dim_linear))], [qw(101 102)], "Linear chain from middle (broken chain)");
+    is( scalar Zigzag::cells_row('100', $dim_linear), 3, "Scalar context: Linear chain count");
+
+    is_deeply( [sort(Zigzag::cells_row('200', $dim_circular))], [qw(200 201 202)], "Circular list from start");
+    is( scalar Zigzag::cells_row('200', $dim_circular), 3, "Scalar context: Circular list count");
+
+    is_deeply( [Zigzag::cells_row('103', $dim_linear)], ['103'], "Single cell (no links in dim)");
+
+    my @empty_row = Zigzag::cells_row('nonexistent_cell_cr', $dim_linear);
+    is( scalar @empty_row, 0, "Non-existent starting cell returns empty list");
+
+    is_deeply( [Zigzag::cells_row('100', '+d.otherdim_cr')], ['100'], "Cell with no links in specified other dimension");
+};
+
+subtest 'cell_insert' => sub {
+    my ($dim, $rev_dim) = ('+d.testinsert', '-d.testinsert');
+
+    # Define cell IDs at a scope visible to all test sections
+    my ($cellA, $cellB, $cellC, $cellD, $cellE) = '5000' .. '5004';
+
+    plan tests => 11;
+
+    $test_slice->{$cellA} = 'CellA_ci';
+    eval { Zigzag::cell_insert('nonexistent_ci1', $cellA, $dim); };
+    like($@, qr/No cell nonexistent_ci1/, "1: Dies if cell1 does not exist");
+
+    %$test_slice = Zigzag::initial_geometry();
+    $test_slice->{$cellB} = 'CellB_ci';
+    eval { Zigzag::cell_insert($cellB, 'nonexistent_ci2', $dim); };
+    like($@, qr/No cell nonexistent_ci2/, "2: Dies if cell2 does not exist");
+
+    %$test_slice = Zigzag::initial_geometry();
+    $test_slice->{$cellA} = 'CellA_ci'; $test_slice->{$cellB} = 'CellB_ci';
+    eval { Zigzag::cell_insert($cellB, $cellA, 'invaliddir'); };
+    like($@, qr/Invalid direction invaliddir/, "3: Dies on invalid direction");
+
+    subtest 'Insert B between A and C (A - C  =>  A - B - C)' => sub {
+        plan tests => 4;
+        %$test_slice = Zigzag::initial_geometry();
+        $test_slice->{$cellA} = 'CellA_ci'; $test_slice->{$cellB} = 'CellB_ci'; $test_slice->{$cellC} = 'CellC_ci';
+        Zigzag::link_make($cellA, $cellC, $dim);
+        Zigzag::cell_insert($cellB, $cellA, $dim);
+        is(Zigzag::cell_nbr($cellA, $dim), $cellB, "4.1: A links to B in $dim");
+        is(Zigzag::cell_nbr($cellB, $rev_dim), $cellA, "4.2: B links back to A in $rev_dim");
+        is(Zigzag::cell_nbr($cellB, $dim), $cellC, "4.3: B links to C in $dim");
+        is(Zigzag::cell_nbr($cellC, $rev_dim), $cellB, "4.4: C links back to B in $rev_dim");
+    };
+
+    subtest 'Insert B at the end of A (A  =>  A - B)' => sub {
+        plan tests => 3;
+        %$test_slice = Zigzag::initial_geometry();
+        $test_slice->{$cellA} = 'CellA_ci'; $test_slice->{$cellB} = 'CellB_ci';
+        Zigzag::cell_insert($cellB, $cellA, $dim);
+        is(Zigzag::cell_nbr($cellA, $dim), $cellB, "5.1: A links to B in $dim");
+        is(Zigzag::cell_nbr($cellB, $rev_dim), $cellA, "5.2: B links back to A in $rev_dim");
+        is(Zigzag::cell_nbr($cellB, $dim), undef, "5.3: B has no link in $dim (end of chain)");
+    };
+
+    subtest 'Insert B at the beginning of A (A => B - A)' => sub {
+        plan tests => 3;
+        %$test_slice = Zigzag::initial_geometry();
+        $test_slice->{$cellA} = 'CellA_ci'; $test_slice->{$cellB} = 'CellB_ci';
+        Zigzag::cell_insert($cellB, $cellA, $rev_dim); # Insert B "before" A
+        is(Zigzag::cell_nbr($cellA, $rev_dim), $cellB, "6.1: A links to B in $rev_dim");
+        is(Zigzag::cell_nbr($cellB, $dim), $cellA, "6.2: B links back to A in $dim");
+        is(Zigzag::cell_nbr($cellB, $rev_dim), undef, "6.3: B has no link in $rev_dim (start of chain)");
+    };
+
+    subtest 'Error: cell1 (to insert, B) already linked in reverse_sign(dir)' => sub {
+        plan tests => 3;
+        # Condition: defined(cell_nbr($cell1, reverse_sign($dir)))
+        %$test_slice = Zigzag::initial_geometry();
+        $test_slice->{$cellA} = 'CellA_ci'; $test_slice->{$cellB} = 'CellB_ci'; $test_slice->{$cellC} = 'CellC_ci';
+        Zigzag::link_make($cellB, $cellC, $rev_dim); # B is already linked to C in -dim (B <- C)
+        eval { Zigzag::cell_insert($cellB, $cellA, $dim); }; # Try to insert B after A in +dim
+        like($@, qr/\Q$cellB $dim $cellA\E/, "7.1: Dies if cell1 already linked in rev_dim");
+        is(Zigzag::cell_nbr($cellB, $rev_dim), $cellC, "7.2: B's original link to C remains");
+        is(Zigzag::cell_nbr($cellA, $dim), undef, "7.3: A remains unlinked to B");
+    };
+
+    subtest 'Error: cell1 (B) linked in dir, cell2 (A) also linked in dir (to C)' => sub {
+        plan tests => 3;
+        # Condition: defined(cell_nbr($cell1, $dir)) && defined($cell3) where $cell3 = cell_nbr($cell2, $dir)
+        %$test_slice = Zigzag::initial_geometry();
+        $test_slice->{$cellA} = 'CellA_ci'; $test_slice->{$cellB} = 'CellB_ci'; $test_slice->{$cellC} = 'CellC_ci'; $test_slice->{$cellD} = 'CellD_ci';
+        Zigzag::link_make($cellA, $cellC, $dim); # A -> C
+        Zigzag::link_make($cellB, $cellD, $dim); # B -> D
+        eval { Zigzag::cell_insert($cellB, $cellA, $dim); };
+        like($@, qr/\Q$cellB $dim $cellA\E/, "8.1: Dies if cell1 and cell2 both have outgoing links in dir");
+        is(Zigzag::cell_nbr($cellA, $dim), $cellC, "8.2: A's link to C remains");
+        is(Zigzag::cell_nbr($cellB, $dim), $cellD, "8.3: B's link to D remains");
+    };
+
+    subtest 'Insert C between A and B, where A and B are already linked (A-B => A-C-B)' => sub {
+        plan tests => 4;
+        %$test_slice = Zigzag::initial_geometry();
+        $test_slice->{$cellA} = 'CellA_ci'; $test_slice->{$cellB} = 'CellB_ci'; $test_slice->{$cellC} = 'CellC_ci';
+        Zigzag::link_make($cellA, $cellB, $dim); # A -> B
+        Zigzag::cell_insert($cellC, $cellA, $dim); # Insert C after A
+        is(Zigzag::cell_nbr($cellA, $dim), $cellC, "9.1: A links to C");
+        is(Zigzag::cell_nbr($cellC, $rev_dim), $cellA, "9.2: C links back to A");
+        is(Zigzag::cell_nbr($cellC, $dim), $cellB, "9.3: C links to B");
+        is(Zigzag::cell_nbr($cellB, $rev_dim), $cellC, "9.4: B links back to C");
+    };
+
+    subtest 'Error: cell1 linked in dir AND cell2 linked in dir (variation)' => sub {
+        plan tests => 3;
+        # (defined(cell_nbr($cell1, $dir)) && defined($cell3))
+        # $cell1=B, $cell2=A, $dir=(+), $cell3=cell_nbr(A, +)
+        # A -> D, B -> E. Insert B after A.
+        # cell_nbr(B, +) is E (defined). cell_nbr(A, +) is D (defined as $cell3). This is an error condition.
+        %$test_slice = Zigzag::initial_geometry();
+        $test_slice->{$cellA} = 'CellA_ci'; $test_slice->{$cellB} = 'CellB_ci'; $test_slice->{$cellD} = 'CellD_ci'; $test_slice->{$cellE} = 'CellE_ci';
+        Zigzag::link_make($cellA, $cellD, $dim); # A -> D
+        Zigzag::link_make($cellB, $cellE, $dim); # B -> E
+        eval { Zigzag::cell_insert($cellB, $cellA, $dim); };
+        like($@, qr/\Q$cellB $dim $cellA\E/, "10.1: Dies if cell1 is linked in dir and cell2 is linked in dir");
+        is(Zigzag::cell_nbr($cellA, $dim), $cellD, "10.2: A still links to D");
+        is(Zigzag::cell_nbr($cellB, $dim), $cellE, "10.3: B still links to E");
+    };
+
+    subtest 'Error: cell1 linked in reverse_sign(dir) (variation)' => sub {
+        plan tests => 4;
+        # defined(cell_nbr($cell1, reverse_sign($dir)))
+        # $cell1=B, $cell2=A, $dir=(+), rev_dir=(-)
+        # E -> B (so B rev_dir E). Insert B after A.
+        # cell_nbr(B, -) is E (defined). This is an error condition.
+        %$test_slice = Zigzag::initial_geometry();
+        $test_slice->{$cellA} = 'CellA_ci'; $test_slice->{$cellB} = 'CellB_ci'; $test_slice->{$cellE} = 'CellE_ci';
+        Zigzag::link_make($cellE, $cellB, $dim); # E -> B, so B is linked from E ($cellB$rev_dim is $cellE)
+        eval { Zigzag::cell_insert($cellB, $cellA, $dim); };
+        like($@, qr/\Q$cellB $dim $cellA\E/, "11.1: Dies if cell1 is linked in rev_dir");
+        is(Zigzag::cell_nbr($cellE, $dim), $cellB, "11.2: E still links to B");
+        is(Zigzag::cell_nbr($cellB, $rev_dim), $cellE, "11.3: B still links from E");
+        is(Zigzag::cell_nbr($cellA, $dim), undef, "11.4: A remains unlinked to B");
+    };
+};
+
+subtest 'view_reset' => sub {
+    %$test_slice = Zigzag::initial_geometry();
+
+    local *main::display_dirty = sub { diag("display_dirty called for view_reset"); };
+
+    plan tests => 7;
+
+    # Setup: Get cursor 0 and its dimension-holding cells
+    my $cursor0 = Zigzag::get_cursor(0); # Cell 11
+    my $dim_cell_x = Zigzag::cell_nbr($cursor0, "+d.1"); # Cell 12, holds X-axis view setting
+    my $dim_cell_y = Zigzag::cell_nbr($dim_cell_x, "+d.1"); # Cell 13, holds Y-axis view setting
+    my $dim_cell_z = Zigzag::cell_nbr($dim_cell_y, "+d.1"); # Cell 14, holds Z-axis view setting
+
+    # Pre-check initial state from initial_geometry for cursor 0
+    is(Zigzag::cell_get($dim_cell_x), "+d.1", "Initial state of cursor 0 X-dim is +d.1");
+    is(Zigzag::cell_get($dim_cell_y), "+d.2", "Initial state of cursor 0 Y-dim is +d.2");
+    is(Zigzag::cell_get($dim_cell_z), "+d.3", "Initial state of cursor 0 Z-dim is +d.3");
+
+    # Test 1: Modify dimensions, then reset
+    Zigzag::cell_set($dim_cell_x, "+d.cursor"); # Change to something non-default
+    Zigzag::cell_set($dim_cell_y, "+d.clone");
+    Zigzag::cell_set($dim_cell_z, "+d.mark");
+
+    Zigzag::view_reset(0); # Reset cursor 0
+
+    is(Zigzag::cell_get($dim_cell_x), "+d.1", "After view_reset(0), X-dim is reset to +d.1");
+    is(Zigzag::cell_get($dim_cell_y), "+d.2", "After view_reset(0), Y-dim is reset to +d.2");
+    is(Zigzag::cell_get($dim_cell_z), "+d.3", "After view_reset(0), Z-dim is reset to +d.3");
+
+    # Test 2: Reset again (should remain default)
+    Zigzag::view_reset(0); # Call reset again
+    is(Zigzag::cell_get($dim_cell_x), "+d.1", "After second view_reset(0), X-dim is still +d.1");
+    # Y and Z dimensions would also remain +d.2 and +d.3 respectively.
 };
