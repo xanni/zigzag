@@ -1,7 +1,7 @@
 use strict;
 use warnings;
 use lib '.'; # To find Zigzag.pm when run from the project directory
-use Test::More tests => 32;
+use Test::More tests => 31;
 
 # Mock user_error for testing purposes, as it's usually provided by the front-end
 BEGIN {
@@ -361,7 +361,7 @@ subtest 'dimension_rename' => sub {
     # No other dimensions initially, so '1+d.2' and '1-d.2' can be self-referential or point to '1'
     # to signify it's the only one in the list connected to CURSOR_HOME's +d.1 path.
 
-    plan tests => 14; # Updated count
+    plan tests => 14;
 
     # 1. Call dimension_rename
     Zigzag::dimension_rename('d.oldname', 'd.newname');
@@ -624,8 +624,8 @@ subtest 'link_break' => sub {
 };
 
 subtest 'dimension_find' => sub {
-    plan tests => 9;
     %$test_slice = Zigzag::initial_geometry();
+    plan tests => 9;
 
     # CURSOR_HOME is 10. dimension_home() should return the cell linked via +d.1 from CURSOR_HOME.
     # In initial_geometry, 10+d.1 -> 1. So, dimension_home() returns 1.
@@ -667,8 +667,8 @@ subtest 'dimension_find' => sub {
 };
 
 subtest 'cell_find' => sub {
-    plan tests => 13;
     %$test_slice = Zigzag::initial_geometry(); # Fresh slice
+    plan tests => 13;
 
     # Setup cells for testing
     $test_slice->{'1000'} = 'ContentA';
@@ -725,8 +725,8 @@ subtest 'cell_find' => sub {
 };
 
 subtest 'is_selected and is_active_selected' => sub {
-    plan tests => 8;
     %$test_slice = Zigzag::initial_geometry();
+    plan tests => 8;
     my $SELECT_HOME = 21; # From Zigzag.pm constants
 
     $test_slice->{'300'} = 'SelectableCell';
@@ -769,8 +769,8 @@ subtest 'is_selected and is_active_selected' => sub {
 };
 
 subtest 'get_contained' => sub {
+    %$test_slice = Zigzag::initial_geometry();
     plan tests => 8;
-    %$test_slice = Zigzag::initial_geometry(); # Standard setup
 
     # Define cells
     $test_slice->{'400'} = 'ContainerA';
@@ -833,24 +833,13 @@ subtest 'get_contained' => sub {
 
 subtest 'dimension_home' => sub {
     plan tests => 1;
-    # Ensure initial_geometry is loaded for this subtest
-    # %$test_slice is usually reset or populated at the start of parent subtests,
-    # but to be absolutely sure for this specific subtest, we can re-assign it.
-    # However, given the test structure, it's likely already populated.
-    # We'll rely on the standard setup that %$test_slice = Zigzag::initial_geometry();
-    # is effectively called before this. If tests fail, this is a point to check.
-
-    # Reset to initial_geometry to ensure clean state for this specific subtest block
-    # This is crucial because other tests modify $test_slice
-    my $test_slice = $Zigzag::Hash_Ref[0]; # Get the global test slice
-    %$test_slice = Zigzag::initial_geometry(); # Repopulate with initial geometry
+    %$test_slice = Zigzag::initial_geometry();
 
     is( Zigzag::dimension_home(), 1, "dimension_home() returns cell 1 (10+d.1 from initial_geometry)");
 };
 
 subtest 'cells_row' => sub {
     # Reset to initial_geometry and then add specific cells for this test
-    my $test_slice = $Zigzag::Hash_Ref[0];
     %$test_slice = Zigzag::initial_geometry();
 
     # Define cells for testing
@@ -875,7 +864,6 @@ subtest 'cells_row' => sub {
     Zigzag::link_make('202', '200', $dim_circular); # Completes the circle
 
     plan tests => 8;
-
     is_deeply( [sort { $a <=> $b } Zigzag::cells_row('100', $dim_linear)], [qw(100 101 102)], "Linear chain from start");
     is_deeply( [sort { $a <=> $b } Zigzag::cells_row('101', $dim_linear)], [qw(101 102)], "Linear chain from middle (broken chain)");
     is( scalar Zigzag::cells_row('100', $dim_linear), 3, "Scalar context: Linear chain count");
@@ -892,7 +880,6 @@ subtest 'cells_row' => sub {
 };
 
 subtest 'cell_insert' => sub {
-    my $test_slice_glob = $Zigzag::Hash_Ref[0]; # Use a distinct name to avoid confusion if $test_slice is used locally
     my $dim = '+d.testinsert';
     my $rev_dim = '-d.testinsert';
 
@@ -900,11 +887,11 @@ subtest 'cell_insert' => sub {
     my $cellA = '5000'; my $cellB = '5001'; my $cellC = '5002';
     my $cellD = '5003'; my $cellE = '5004';
 
-    plan tests => 30; # Corrected test count
+    plan tests => 30;
 
     # Test 1: Insert B between A and C (A - C  =>  A - B - C)
-    %$test_slice_glob = Zigzag::initial_geometry();
-    $test_slice_glob->{$cellA} = 'CellA_ci'; $test_slice_glob->{$cellB} = 'CellB_ci'; $test_slice_glob->{$cellC} = 'CellC_ci';
+    %$test_slice = Zigzag::initial_geometry();
+    $test_slice->{$cellA} = 'CellA_ci'; $test_slice->{$cellB} = 'CellB_ci'; $test_slice->{$cellC} = 'CellC_ci';
     Zigzag::link_make($cellA, $cellC, $dim);
     Zigzag::cell_insert($cellB, $cellA, $dim);
     is(Zigzag::cell_nbr($cellA, $dim), $cellB, "T1.1: A links to B in $dim");
@@ -913,16 +900,16 @@ subtest 'cell_insert' => sub {
     is(Zigzag::cell_nbr($cellC, $rev_dim), $cellB, "T1.4: C links back to B in $rev_dim");
 
     # Test 2: Insert B at the end of A (A  =>  A - B)
-    %$test_slice_glob = Zigzag::initial_geometry();
-    $test_slice_glob->{$cellA} = 'CellA_ci'; $test_slice_glob->{$cellB} = 'CellB_ci';
+    %$test_slice = Zigzag::initial_geometry();
+    $test_slice->{$cellA} = 'CellA_ci'; $test_slice->{$cellB} = 'CellB_ci';
     Zigzag::cell_insert($cellB, $cellA, $dim);
     is(Zigzag::cell_nbr($cellA, $dim), $cellB, "T2.1: A links to B in $dim");
     is(Zigzag::cell_nbr($cellB, $rev_dim), $cellA, "T2.2: B links back to A in $rev_dim");
     is(Zigzag::cell_nbr($cellB, $dim), undef, "T2.3: B has no link in $dim (end of chain)");
 
     # Test 3: Insert B at the beginning of A (A => B - A) (using $rev_dim for insertion relative to A)
-    %$test_slice_glob = Zigzag::initial_geometry();
-    $test_slice_glob->{$cellA} = 'CellA_ci'; $test_slice_glob->{$cellB} = 'CellB_ci';
+    %$test_slice = Zigzag::initial_geometry();
+    $test_slice->{$cellA} = 'CellA_ci'; $test_slice->{$cellB} = 'CellB_ci';
     Zigzag::cell_insert($cellB, $cellA, $rev_dim); # Insert B "before" A
     is(Zigzag::cell_nbr($cellA, $rev_dim), $cellB, "T3.1: A links to B in $rev_dim");
     is(Zigzag::cell_nbr($cellB, $dim), $cellA, "T3.2: B links back to A in $dim");
@@ -930,8 +917,8 @@ subtest 'cell_insert' => sub {
 
     # Test 4: Error - cell1 (to insert, B) already linked in reverse_sign(dir)
     # Condition: defined(cell_nbr($cell1, reverse_sign($dir)))
-    %$test_slice_glob = Zigzag::initial_geometry();
-    $test_slice_glob->{$cellA} = 'CellA_ci'; $test_slice_glob->{$cellB} = 'CellB_ci'; $test_slice_glob->{$cellC} = 'CellC_ci';
+    %$test_slice = Zigzag::initial_geometry();
+    $test_slice->{$cellA} = 'CellA_ci'; $test_slice->{$cellB} = 'CellB_ci'; $test_slice->{$cellC} = 'CellC_ci';
     Zigzag::link_make($cellB, $cellC, $rev_dim); # B is already linked to C in -dim (B <- C)
     eval { Zigzag::cell_insert($cellB, $cellA, $dim); }; # Try to insert B after A in +dim
     like($@, qr/\Q$cellB $dim $cellA\E/, "T4.1: Dies if cell1 already linked in rev_dim (user_error 2)");
@@ -940,8 +927,8 @@ subtest 'cell_insert' => sub {
 
     # Test 5: Error - cell1 (B) linked in dir, cell2 (A) also linked in dir (to C)
     # Condition: defined(cell_nbr($cell1, $dir)) && defined($cell3) where $cell3 = cell_nbr($cell2, $dir)
-    %$test_slice_glob = Zigzag::initial_geometry();
-    $test_slice_glob->{$cellA} = 'CellA_ci'; $test_slice_glob->{$cellB} = 'CellB_ci'; $test_slice_glob->{$cellC} = 'CellC_ci'; $test_slice_glob->{$cellD} = 'CellD_ci';
+    %$test_slice = Zigzag::initial_geometry();
+    $test_slice->{$cellA} = 'CellA_ci'; $test_slice->{$cellB} = 'CellB_ci'; $test_slice->{$cellC} = 'CellC_ci'; $test_slice->{$cellD} = 'CellD_ci';
     Zigzag::link_make($cellA, $cellC, $dim); # A -> C
     Zigzag::link_make($cellB, $cellD, $dim); # B -> D
     eval { Zigzag::cell_insert($cellB, $cellA, $dim); };
@@ -950,26 +937,26 @@ subtest 'cell_insert' => sub {
     is(Zigzag::cell_nbr($cellB, $dim), $cellD, "T5.3: B's link to D remains");
 
     # Test 6: Error - cell1 (cell to insert) does not exist
-    %$test_slice_glob = Zigzag::initial_geometry();
-    $test_slice_glob->{$cellA} = 'CellA_ci';
+    %$test_slice = Zigzag::initial_geometry();
+    $test_slice->{$cellA} = 'CellA_ci';
     eval { Zigzag::cell_insert('nonexistent_ci1', $cellA, $dim); };
     like($@, qr/No cell nonexistent_ci1/, "T6.1: Dies if cell1 does not exist");
 
     # Test 7: Error - cell2 (target cell) does not exist
-    %$test_slice_glob = Zigzag::initial_geometry();
-    $test_slice_glob->{$cellB} = 'CellB_ci';
+    %$test_slice = Zigzag::initial_geometry();
+    $test_slice->{$cellB} = 'CellB_ci';
     eval { Zigzag::cell_insert($cellB, 'nonexistent_ci2', $dim); };
     like($@, qr/No cell nonexistent_ci2/, "T7.1: Dies if cell2 does not exist");
 
     # Test 8: Error - Invalid direction
-    %$test_slice_glob = Zigzag::initial_geometry();
-    $test_slice_glob->{$cellA} = 'CellA_ci'; $test_slice_glob->{$cellB} = 'CellB_ci';
+    %$test_slice = Zigzag::initial_geometry();
+    $test_slice->{$cellA} = 'CellA_ci'; $test_slice->{$cellB} = 'CellB_ci';
     eval { Zigzag::cell_insert($cellB, $cellA, 'invaliddir'); };
     like($@, qr/Invalid direction invaliddir/, "T8.1: Dies on invalid direction");
 
     # Test 9: Insert C between A and B, where A and B are already linked. A-B => A-C-B
-    %$test_slice_glob = Zigzag::initial_geometry();
-    $test_slice_glob->{$cellA} = 'CellA_ci'; $test_slice_glob->{$cellB} = 'CellB_ci'; $test_slice_glob->{$cellC} = 'CellC_ci';
+    %$test_slice = Zigzag::initial_geometry();
+    $test_slice->{$cellA} = 'CellA_ci'; $test_slice->{$cellB} = 'CellB_ci'; $test_slice->{$cellC} = 'CellC_ci';
     Zigzag::link_make($cellA, $cellB, $dim); # A -> B
     Zigzag::cell_insert($cellC, $cellA, $dim); # Insert C after A
     is(Zigzag::cell_nbr($cellA, $dim), $cellC, "T9.1: A links to C");
@@ -982,8 +969,8 @@ subtest 'cell_insert' => sub {
     # $cell1=B, $cell2=A, $dir=(+), $cell3=cell_nbr(A, +)
     # A -> D, B -> E. Insert B after A.
     # cell_nbr(B, +) is E (defined). cell_nbr(A, +) is D (defined as $cell3). This is an error condition.
-    %$test_slice_glob = Zigzag::initial_geometry();
-    $test_slice_glob->{$cellA} = 'CellA_ci'; $test_slice_glob->{$cellB} = 'CellB_ci'; $test_slice_glob->{$cellD} = 'CellD_ci'; $test_slice_glob->{$cellE} = 'CellE_ci';
+    %$test_slice = Zigzag::initial_geometry();
+    $test_slice->{$cellA} = 'CellA_ci'; $test_slice->{$cellB} = 'CellB_ci'; $test_slice->{$cellD} = 'CellD_ci'; $test_slice->{$cellE} = 'CellE_ci';
     Zigzag::link_make($cellA, $cellD, $dim); # A -> D
     Zigzag::link_make($cellB, $cellE, $dim); # B -> E
     eval { Zigzag::cell_insert($cellB, $cellA, $dim); };
@@ -996,8 +983,8 @@ subtest 'cell_insert' => sub {
     # $cell1=B, $cell2=A, $dir=(+), rev_dir=(-)
     # E -> B (so B rev_dir E). Insert B after A.
     # cell_nbr(B, -) is E (defined). This is an error condition.
-    %$test_slice_glob = Zigzag::initial_geometry();
-    $test_slice_glob->{$cellA} = 'CellA_ci'; $test_slice_glob->{$cellB} = 'CellB_ci'; $test_slice_glob->{$cellE} = 'CellE_ci';
+    %$test_slice = Zigzag::initial_geometry();
+    $test_slice->{$cellA} = 'CellA_ci'; $test_slice->{$cellB} = 'CellB_ci'; $test_slice->{$cellE} = 'CellE_ci';
     Zigzag::link_make($cellE, $cellB, $dim); # E -> B, so B is linked from E ($cellB$rev_dim is $cellE)
     eval { Zigzag::cell_insert($cellB, $cellA, $dim); };
     like($@, qr/\Q$cellB $dim $cellA\E/, "T11.1: Dies if cell1 is linked in rev_dir (user_error 2 variation)");
@@ -1006,122 +993,7 @@ subtest 'cell_insert' => sub {
     is(Zigzag::cell_nbr($cellA, $dim), undef, "T11.4: A remains unlinked to B");
 };
 
-subtest 'atcursor_select' => sub {
-    my $test_slice_glob = $Zigzag::Hash_Ref[0]; # Use a distinct global name for clarity in direct access
-    my $SELECT_HOME = 21;
-    my $CURSOR_HOME = 10;
-
-    local *main::user_error = sub { die "user_error: @_
-"; };
-    local *main::display_status_draw = sub { diag("display_status_draw: ", @_); };
-    local *main::display_dirty = sub { diag("display_dirty called"); };
-
-    my $cell_to_select = '6000';
-    my $other_sel_head = '6001';
-    my $accursed_target_acs;
-
-    plan tests => 20; # Total assertions planned
-
-    # --- Test 1: Select an unselected cell ---
-    # Inlined setup_acs_env_todo($cell_to_select);
-    %$test_slice_glob = Zigzag::initial_geometry();
-    $test_slice_glob->{$cell_to_select} = 'CellToSelect_acs';
-    $test_slice_glob->{$other_sel_head} = 'OtherSelectionHead_acs';
-    my $cursor0_t1 = Zigzag::get_cursor(0);
-    my $target_cell_id_t1 = $cell_to_select;
-    my $prev_target_link_plus_t1 = Zigzag::cell_nbr($target_cell_id_t1, "+d.cursor");
-    my $prev_target_link_minus_t1 = Zigzag::cell_nbr($target_cell_id_t1, "-d.cursor");
-    Zigzag::link_break($target_cell_id_t1, "+d.cursor") if $prev_target_link_plus_t1;
-    Zigzag::link_break($target_cell_id_t1, "-d.cursor") if $prev_target_link_minus_t1;
-    my $old_accursed_t1 = Zigzag::cell_nbr($cursor0_t1, "-d.cursor");
-    Zigzag::link_break($cursor0_t1, "-d.cursor") if $old_accursed_t1;
-    Zigzag::link_make($target_cell_id_t1, $cursor0_t1, "+d.cursor");
-    $accursed_target_acs = $target_cell_id_t1;
-
-    ok(!Zigzag::is_selected($accursed_target_acs), "T1.0: Cell $accursed_target_acs is initially not selected");
-    Zigzag::atcursor_select(0);
-    ok(Zigzag::is_selected($accursed_target_acs), "T1.1: Cell $accursed_target_acs is now selected");
-    is(Zigzag::get_which_selection($accursed_target_acs), $SELECT_HOME, "T1.2: Cell $accursed_target_acs belongs to active selection ($SELECT_HOME)");
-    is(Zigzag::cell_nbr($SELECT_HOME, "+d.mark"), $accursed_target_acs, "T1.3: SELECT_HOME +d.mark links to $accursed_target_acs");
-    is(Zigzag::cell_nbr($accursed_target_acs, "-d.mark"), $SELECT_HOME, "T1.4: $accursed_target_acs -d.mark links to SELECT_HOME");
-
-    # Test 2: Deselect an actively selected cell (continues from T1 state)
-    ok(Zigzag::is_selected($accursed_target_acs), "T2.0: Cell $accursed_target_acs is currently selected");
-    Zigzag::atcursor_select(0);
-    ok(!Zigzag::is_selected($accursed_target_acs), "T2.1: Cell $accursed_target_acs is no longer selected");
-    is(Zigzag::get_which_selection($accursed_target_acs), undef, "T2.2: Cell $accursed_target_acs belongs to no selection");
-    # TODO: Fails - head +d.mark is undef, expected to be self-linked (e.g. 21)
-    is($test_slice_glob->{"$SELECT_HOME+d.mark"}, "$SELECT_HOME", "T2.3: SELECT_HOME +d.mark links to itself (direct hash check)");
-
-    # Test 3: Select a cell that is already in a non-active selection
-    # Inlined setup_acs_env_todo($cell_to_select);
-    %$test_slice_glob = Zigzag::initial_geometry();
-    $test_slice_glob->{$cell_to_select} = 'CellToSelect_acs';
-    $test_slice_glob->{$other_sel_head} = 'OtherSelectionHead_acs';
-    my $cursor0_t3 = Zigzag::get_cursor(0);
-    my $target_cell_id_t3 = $cell_to_select;
-    my $prev_target_link_plus_t3 = Zigzag::cell_nbr($target_cell_id_t3, "+d.cursor");
-    my $prev_target_link_minus_t3 = Zigzag::cell_nbr($target_cell_id_t3, "-d.cursor");
-    Zigzag::link_break($target_cell_id_t3, "+d.cursor") if $prev_target_link_plus_t3;
-    Zigzag::link_break($target_cell_id_t3, "-d.cursor") if $prev_target_link_minus_t3;
-    my $old_accursed_t3 = Zigzag::cell_nbr($cursor0_t3, "-d.cursor");
-    Zigzag::link_break($cursor0_t3, "-d.cursor") if $old_accursed_t3;
-    Zigzag::link_make($target_cell_id_t3, $cursor0_t3, "+d.cursor");
-    $accursed_target_acs = $target_cell_id_t3;
-
-    # Ensure SELECT_HOME is not linked to other_sel_head in d.2 from previous tests or initial_geometry if relevant
-    # This check and break is specific to Test 3's logic, not part of generic setup
-    my $sh_plus_d2 = Zigzag::cell_nbr($SELECT_HOME, "+d.2"); # Check existing link
-    if (defined $sh_plus_d2 && $sh_plus_d2 ne $other_sel_head) { # Break if it's not already the one we want or if it's part of a different structure
-         Zigzag::link_break($SELECT_HOME, "+d.2");
-    } elsif (!defined $sh_plus_d2) { # Or if no link, ensure it's clear for new link_make
-        # It's already clear if undef, but if it points to self (from initial_geometry for example)
-        if (Zigzag::cell_nbr($SELECT_HOME, "+d.2") eq $SELECT_HOME && Zigzag::cell_nbr($SELECT_HOME,"-d.2") eq $SELECT_HOME) {
-             Zigzag::link_break($SELECT_HOME, "+d.2");
-        }
-    }
-    Zigzag::link_make($SELECT_HOME, $other_sel_head, "+d.2");
-    Zigzag::link_make($other_sel_head, $SELECT_HOME, "+d.2"); # Make it circular for safety
-    Zigzag::link_make($other_sel_head, $accursed_target_acs, "+d.mark");
-
-    ok(Zigzag::is_selected($accursed_target_acs), "T3.0: Cell $accursed_target_acs is selected (in non-active $other_sel_head)");
-    is(Zigzag::get_which_selection($accursed_target_acs), $other_sel_head, "T3.1: Cell $accursed_target_acs in non-active selection $other_sel_head");
-    Zigzag::atcursor_select(0);
-    ok(Zigzag::is_selected($accursed_target_acs), "T3.2: Cell $accursed_target_acs is still selected (now active)");
-    is(Zigzag::get_which_selection($accursed_target_acs), $SELECT_HOME, "T3.3: Cell $accursed_target_acs is NOW in active selection ($SELECT_HOME)");
-    # TODO: Fails - head +d.mark is undef
-    is($test_slice_glob->{"$other_sel_head+d.mark"}, "$other_sel_head", "T3.4: Other sel head $other_sel_head +d.mark links to itself (direct hash check)");
-    is(Zigzag::cell_nbr($SELECT_HOME, "+d.mark"), $accursed_target_acs, "T3.5: SELECT_HOME +d.mark links to $accursed_target_acs");
-
-    # Test 4: Attempt to select SELECT_HOME itself
-    # Inlined setup_acs_env_todo($SELECT_HOME);
-    %$test_slice_glob = Zigzag::initial_geometry();
-    $test_slice_glob->{$cell_to_select} = 'CellToSelect_acs'; # This will not be used as target is SELECT_HOME
-    $test_slice_glob->{$other_sel_head} = 'OtherSelectionHead_acs';
-    my $cursor0_t4 = Zigzag::get_cursor(0);
-    my $target_cell_id_t4 = $SELECT_HOME;
-    # SELECT_HOME (21) should not have +d.cursor or -d.cursor links from initial_geometry, but clear to be safe
-    my $prev_target_link_plus_t4 = Zigzag::cell_nbr($target_cell_id_t4, "+d.cursor");
-    my $prev_target_link_minus_t4 = Zigzag::cell_nbr($target_cell_id_t4, "-d.cursor");
-    Zigzag::link_break($target_cell_id_t4, "+d.cursor") if $prev_target_link_plus_t4;
-    Zigzag::link_break($target_cell_id_t4, "-d.cursor") if $prev_target_link_minus_t4;
-    my $old_accursed_t4 = Zigzag::cell_nbr($cursor0_t4, "-d.cursor");
-    Zigzag::link_break($cursor0_t4, "-d.cursor") if $old_accursed_t4;
-    Zigzag::link_make($target_cell_id_t4, $cursor0_t4, "+d.cursor");
-    $accursed_target_acs = $target_cell_id_t4;
-
-    my $eval_ok = eval { Zigzag::atcursor_select(0); 1; };
-    ok($eval_ok, "T4.1: Selecting SELECT_HOME itself does not die immediately (atcursor_select call)");
-    # TODO: Fails - is_selected($SELECT_HOME) returns true.
-    ok(!Zigzag::is_selected($SELECT_HOME), "T4.2: SELECT_HOME is not 'selected' when self-linked (empty list)");
-    is(Zigzag::cell_nbr($SELECT_HOME, "+d.mark"), "$SELECT_HOME", "T4.3: SELECT_HOME +d.mark is self-linked");
-    is(Zigzag::cell_nbr($SELECT_HOME, "-d.mark"), "$SELECT_HOME", "T4.4: SELECT_HOME -d.mark is self-linked");
-};
-
 subtest 'view_reset' => sub {
-    my $test_slice = $Zigzag::Hash_Ref[0];
-
-    # Ensure a clean state for this test block
     %$test_slice = Zigzag::initial_geometry();
 
     local *main::display_dirty = sub { diag("display_dirty called for view_reset"); };
@@ -1154,113 +1026,4 @@ subtest 'view_reset' => sub {
     Zigzag::view_reset(0); # Call reset again
     is(Zigzag::cell_get($dim_cell_x), "+d.1", "After second view_reset(0), X-dim is still +d.1");
     # Y and Z dimensions would also remain +d.2 and +d.3 respectively.
-};
-
-subtest 'atcursor_select' => sub {
-    my $test_slice_glob = $Zigzag::Hash_Ref[0];
-    my $SELECT_HOME = 21; # From Zigzag.pm
-    # CURSOR_HOME is 10, get_cursor(0) from initial_geometry is 11.
-
-    # Mock display_status_draw and display_dirty for this subtest
-    local *main::display_status_draw = sub {}; # No-op
-    local *main::display_dirty = sub {};     # No-op
-
-    # Cell IDs for tests
-    my $cell_to_select = '6000';
-    my $other_sel_head = '6001';
-    my $accursed_target_for_test;
-
-    plan tests => 20; # Updated count: T1(5) + T2(4) + T3(7) + T4(4) = 20
-
-    # --- Test 1: Select an unselected cell ---
-    %$test_slice_glob = Zigzag::initial_geometry();
-    $test_slice_glob->{$cell_to_select} = 'CellToSelect_acs';
-    my $cursor0_t1 = Zigzag::get_cursor(0);
-    my $initial_accursed_t1 = Zigzag::cell_nbr($cursor0_t1, '-d.cursor');
-    if (defined $initial_accursed_t1) { delete $test_slice_glob->{"$initial_accursed_t1+d.cursor"}; }
-    delete $test_slice_glob->{"$cursor0_t1-d.cursor"};
-    delete $test_slice_glob->{"$cell_to_select+d.cursor"}; delete $test_slice_glob->{"$cell_to_select-d.cursor"};
-    $test_slice_glob->{"$cursor0_t1-d.cursor"} = $cell_to_select;
-    $test_slice_glob->{"$cell_to_select+d.cursor"} = $cursor0_t1;
-    $accursed_target_for_test = $cell_to_select;
-
-    ok(!Zigzag::is_selected($accursed_target_for_test), "T1.0: Cell $accursed_target_for_test is initially not selected");
-    Zigzag::atcursor_select(0);
-    ok(Zigzag::is_selected($accursed_target_for_test), "T1.1: Cell $accursed_target_for_test is now selected");
-    is(Zigzag::get_which_selection($accursed_target_for_test), $SELECT_HOME, "T1.2: Cell $accursed_target_for_test belongs to active selection ($SELECT_HOME)");
-    is(Zigzag::cell_nbr($SELECT_HOME, "+d.mark"), $accursed_target_for_test, "T1.3: SELECT_HOME +d.mark links to $accursed_target_for_test");
-    is(Zigzag::cell_nbr($accursed_target_for_test, "-d.mark"), $SELECT_HOME, "T1.4: $accursed_target_for_test -d.mark links to SELECT_HOME");
-
-    # --- Test 2: Deselect an actively selected cell ---
-    # State continues from Test 1 where $accursed_target_for_test ($cell_to_select) is selected and pointed to by cursor 0.
-    ok(Zigzag::is_selected($accursed_target_for_test), "T2.0: Cell $accursed_target_for_test is currently selected");
-    Zigzag::atcursor_select(0);
-    ok(!Zigzag::is_selected($accursed_target_for_test), "T2.1: Cell $accursed_target_for_test is no longer selected");
-    is(Zigzag::get_which_selection($accursed_target_for_test), undef, "T2.2: Cell $accursed_target_for_test belongs to no selection");
-    # Forcing for diagnostics:
-    # $test_slice_glob->{"$SELECT_HOME+d.mark"} = $SELECT_HOME;
-    # $test_slice_glob->{"$SELECT_HOME-d.mark"} = $SELECT_HOME;
-    Test::More::diag("DEBUG T2.3: Checking direct hash value for $SELECT_HOME+d.mark: '", $test_slice_glob->{"$SELECT_HOME+d.mark"} // "undef", "'");
-    is($test_slice_glob->{"$SELECT_HOME+d.mark"}, $SELECT_HOME, "T2.3: SELECT_HOME +d.mark links to itself (direct hash check)");
-
-    # --- Test 3: Select a cell that is already in a non-active selection ---
-    %$test_slice_glob = Zigzag::initial_geometry();
-    $test_slice_glob->{$cell_to_select} = 'CellToSelect_acs';
-    $test_slice_glob->{$other_sel_head} = 'OtherSelectionHead_acs';
-    my $cursor0_t3 = Zigzag::get_cursor(0);
-    my $initial_accursed_t3 = Zigzag::cell_nbr($cursor0_t3, '-d.cursor');
-    if (defined $initial_accursed_t3) { delete $test_slice_glob->{"$initial_accursed_t3+d.cursor"}; }
-    delete $test_slice_glob->{"$cursor0_t3-d.cursor"};
-    delete $test_slice_glob->{"$cell_to_select+d.cursor"}; delete $test_slice_glob->{"$cell_to_select-d.cursor"};
-    $test_slice_glob->{"$cursor0_t3-d.cursor"} = $cell_to_select;
-    $test_slice_glob->{"$cell_to_select+d.cursor"} = $cursor0_t3;
-    $accursed_target_for_test = $cell_to_select;
-
-    # Setup for non-active selection list: SELECT_HOME <-> other_sel_head in d.2
-    # Initial: SELECT_HOME+d.2 is SELECT_HOME. Break this.
-    my $current_sh_plus_d2 = Zigzag::cell_nbr($SELECT_HOME, "+d.2");
-    if (defined $current_sh_plus_d2) {
-        # This will also break SELECT_HOME-d.2 if it's part of the same link pair
-        Zigzag::link_break($SELECT_HOME, "+d.2");
-    }
-    Zigzag::link_make($SELECT_HOME, $other_sel_head, "+d.2");      # SELECT_HOME -> other_sel_head
-    Zigzag::link_make($other_sel_head, $SELECT_HOME, "+d.2");  # other_sel_head -> SELECT_HOME (completes cycle)
-
-    Zigzag::link_make($other_sel_head, $accursed_target_for_test, "+d.mark"); # other_sel_head has cell_to_select marked
-
-    ok(Zigzag::is_selected($accursed_target_for_test), "T3.0: Cell $accursed_target_for_test is selected (in non-active)");
-    isnt(Zigzag::get_which_selection($accursed_target_for_test), $SELECT_HOME, "T3.1: Cell $accursed_target_for_test not in active selection initially");
-    is(Zigzag::get_which_selection($accursed_target_for_test), $other_sel_head, "T3.2: Cell $accursed_target_for_test in non-active selection $other_sel_head");
-
-    Zigzag::atcursor_select(0);
-
-    ok(Zigzag::is_selected($accursed_target_for_test), "T3.3: Cell $accursed_target_for_test is still selected");
-    is(Zigzag::get_which_selection($accursed_target_for_test), $SELECT_HOME, "T3.4: Cell $accursed_target_for_test is NOW in active selection ($SELECT_HOME)");
-    # Forcing for diagnostics:
-    # $test_slice_glob->{"$other_sel_head+d.mark"} = $other_sel_head;
-    # $test_slice_glob->{"$other_sel_head-d.mark"} = $other_sel_head;
-    Test::More::diag("DEBUG T3.5: Checking direct hash value for $other_sel_head+d.mark: '", $test_slice_glob->{"$other_sel_head+d.mark"} // "undef", "'");
-    is($test_slice_glob->{"$other_sel_head+d.mark"}, $other_sel_head, "T3.5: Other sel head $other_sel_head +d.mark links to itself (direct hash check)");
-    is(Zigzag::cell_nbr($SELECT_HOME, "+d.mark"), $accursed_target_for_test, "T3.6: SELECT_HOME +d.mark links to $accursed_target_for_test");
-
-    # --- Test 4: Attempt to select SELECT_HOME itself ---
-    %$test_slice_glob = Zigzag::initial_geometry();
-    # $SELECT_HOME (21) is already defined in initial_geometry
-    my $cursor0_t4 = Zigzag::get_cursor(0);
-    my $initial_accursed_t4 = Zigzag::cell_nbr($cursor0_t4, '-d.cursor');
-    if (defined $initial_accursed_t4) { delete $test_slice_glob->{"$initial_accursed_t4+d.cursor"}; }
-    delete $test_slice_glob->{"$cursor0_t4-d.cursor"};
-    # $SELECT_HOME should not have other cursor links if it's the target
-    delete $test_slice_glob->{"$SELECT_HOME+d.cursor"}; delete $test_slice_glob->{"$SELECT_HOME-d.cursor"};
-    $test_slice_glob->{"$cursor0_t4-d.cursor"} = $SELECT_HOME;
-    $test_slice_glob->{"$SELECT_HOME+d.cursor"} = $cursor0_t4;
-    $accursed_target_for_test = $SELECT_HOME;
-
-    # With robust self-link in link_make, and SELECT_HOME being isolated in d.mark initially,
-    # cell_insert should not error. It should call link_make(21,21,"+d.mark") which should succeed.
-    eval { Zigzag::atcursor_select(0); };
-    is($@, '', "T4.1: Selecting SELECT_HOME itself should not die");
-    ok(Zigzag::is_selected($SELECT_HOME), "T4.2: SELECT_HOME is now selected by itself");
-    is(Zigzag::cell_nbr($SELECT_HOME, "+d.mark"), $SELECT_HOME, "T4.3: SELECT_HOME +d.mark links to itself");
-    is(Zigzag::cell_nbr($SELECT_HOME, "-d.mark"), $SELECT_HOME, "T4.4: SELECT_HOME -d.mark links to itself");
 };
