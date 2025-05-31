@@ -1448,7 +1448,7 @@ sub cells_row($$)
 {
   my ($cell1, $dir) = @_;
 
-  return if (!defined $cell1);
+  return () if (!defined cell_get($cell1)); # Check if cell actually exists
 
   my $cell;
   my @result = ($cell1);
