@@ -1,3 +1,5 @@
+package ZigzagTest;
+
 use strict;
 use warnings;
 use lib '.'; # To find Zigzag.pm when run from the project directory
@@ -16,7 +18,7 @@ BEGIN {
 BEGIN { use_ok('Zigzag'); }
 
 # Setup data for all tests in slice 0
-@Zigzag::Hash_Ref = ({}); 
+@Zigzag::Hash_Ref = ({});
 my $test_slice = $Zigzag::Hash_Ref[0];
 
 subtest 'cell_excise' => sub {
@@ -136,9 +138,7 @@ subtest 'cell_find' => sub {
 };
 
 subtest 'cell_get' => sub {
-    plan tests => 4;
-    local @Zigzag::Hash_Ref = ({}); # Localize Hash_Ref for this subtest
-    my $test_slice = $Zigzag::Hash_Ref[0];
+    %$test_slice = ();
 
     # Define cells
     $test_slice->{'100'} = 'Hello World';
@@ -146,6 +146,7 @@ subtest 'cell_get' => sub {
     $test_slice->{'102'} = undef;
     # Cell '103' is intentionally not added to the hash
 
+    plan tests => 4;
     is( Zigzag::cell_get('100'), 'Hello World', 'cell with string content');
     is( Zigzag::cell_get('101'), '', 'cell with empty string content');
     is( Zigzag::cell_get('102'), undef, 'cell with undef content');
@@ -323,42 +324,35 @@ subtest 'cell_new' => sub {
 };
 
 subtest 'cell_set' => sub {
-    # Localize @Zigzag::Hash_Ref for the entire subtest to prevent side-effects
-    local @Zigzag::Hash_Ref;
+    %$test_slice = ();
     plan tests => 5;
 
-    # Test a: Set content for an existing cell
-    @Zigzag::Hash_Ref = ({});
-    my $test_slice_a = $Zigzag::Hash_Ref[0];
-    $test_slice_a->{'100'} = 'Initial Content';
+    # Test 1: Set content for an existing cell
+    $test_slice->{'100'} = 'Initial Content';
     Zigzag::cell_set('100', 'Updated Content');
-    is($test_slice_a->{'100'}, 'Updated Content', 'Set content for existing cell');
+    is($test_slice->{'100'}, 'Updated Content', 'Set content for existing cell');
 
-    # Test b: cell_set on a non-existent cell ID dies
-    @Zigzag::Hash_Ref = ({});
-    # my $test_slice_b = $Zigzag::Hash_Ref[0]; # Not strictly needed for this version
+    # Test 2: cell_set on a non-existent cell ID dies
+    %$test_slice = ();
     eval { Zigzag::cell_set('101', 'New Cell Content'); };
     like($@, qr/No cell 101/, 'cell_set on non-existent cell ID 101 dies');
 
-    # Test c: Set undef as content for an existing cell
-    @Zigzag::Hash_Ref = ({});
-    my $test_slice_c = $Zigzag::Hash_Ref[0];
-    $test_slice_c->{'102'} = 'Some Content';
+    # Test 3: Set undef as content for an existing cell
+    %$test_slice = ();
+    $test_slice->{'102'} = 'Some Content';
     Zigzag::cell_set('102', undef);
-    is($test_slice_c->{'102'}, undef, 'Set undef content for existing cell');
+    is($test_slice->{'102'}, undef, 'Set undef content for existing cell');
 
-    # Test d: Set content for an existing cell and ensure other cells are not affected
-    @Zigzag::Hash_Ref = ({});
-    my $test_slice_d = $Zigzag::Hash_Ref[0];
-    $test_slice_d->{'104'} = 'Unaffected Content';
-    $test_slice_d->{'105'} = 'Content To Change';
+    # Test 4: Set content for an existing cell and ensure other cells are not affected
+    %$test_slice = ();
+    $test_slice->{'104'} = 'Unaffected Content';
+    $test_slice->{'105'} = 'Content To Change';
     Zigzag::cell_set('105', 'Changed Content');
-    is($test_slice_d->{'104'}, 'Unaffected Content', 'Other cell content remains unaffected');
+    is($test_slice->{'104'}, 'Unaffected Content', 'Other cell content remains unaffected');
 
-    # Test e: Test die condition when cell_slice returns undef for the cell
+    # Test 5: Test die condition when cell_slice returns undef for the cell
     # Make $Zigzag::Hash_Ref[0] undef so cell_slice (presumably returning $Zigzag::Hash_Ref[0]) returns undef.
-    local $Zigzag::Hash_Ref[0]; # Localizes $Zigzag::Hash_Ref[0], it will be undef.
-    undef $Zigzag::Hash_Ref[0]; # Explicitly undef it.
+    undef %$test_slice;
     eval { Zigzag::cell_set('200', 'Content for non-slice cell'); };
     like($@, qr/No cell 200/, 'Dies if cell_slice returns undef for cell ID 200');
 };
@@ -518,7 +512,7 @@ subtest 'dimension_rename' => sub {
     Zigzag::link_make('1', '2', '+d.2');
 
     Zigzag::dimension_rename('d.newname', 'd.existingname'); # This call should do nothing as d.existingname already exists
-    
+
     is(Zigzag::dimension_find('d.newname'), '1', 'dimension_find for d.newname still returns cell 1');
     is($test_slice->{'1'}, 'd.newname', 'Dimension cell 1 content remains d.newname after trying to rename to existing');
     ok(exists $test_slice->{'100+d.newname'}, 'Key 100+d.newname still exists after attempting to rename to existing dimension');
@@ -934,15 +928,7 @@ subtest 'link_break' => sub {
     plan tests => 12; # 2x2 for success cases, 8 for die cases
 
     # Setup cells for link_break tests
-    $test_slice->{'2000'} = 'Cell 2000 for link_break';
-    $test_slice->{'2001'} = 'Cell 2001 for link_break';
-    $test_slice->{'2002'} = 'Cell 2002 for link_break';
-    $test_slice->{'2003'} = 'Cell 2003 for link_break';
-    $test_slice->{'2004'} = 'Cell 2004 for link_break'; # For test 6
-    $test_slice->{'2005'} = 'Cell 2005 for link_break'; # For test 7
-    $test_slice->{'2006'} = 'Cell 2006 for link_break'; # For test 7
-    $test_slice->{'2007'} = 'Cell 2007 for link_break'; # For test 7
-    $test_slice->{'2008'} = 'Cell 2008 for link_break'; # For test 10
+    $test_slice->{$_} = "Cell $_ for link break" for '2000'..'2008';
 
     # Test 1: Successful break (3 arguments)
     Zigzag::link_make('2000', '2001', '+d.testbreak_s3');
@@ -957,13 +943,13 @@ subtest 'link_break' => sub {
     is($test_slice->{'2003-d.testbreak_s2'}, undef, "link_break(2 args): cell2 link is undef");
 
     # Test 3: Error case (3 args): $cell1 does not exist
-    eval { Zigzag::link_break('nonexistent_lb1', '2001', '+d.testbreak_e1'); };
-    like($@, qr/nonexistent_lb1 has no link in direction \+d.testbreak_e1/, "link_break(3 args): die when cell1 does not exist (actual msg check)");
+    eval { Zigzag::link_break('2999', '2001', '+d.testbreak_e1'); };
+    like($@, qr/2999 has no link in direction \+d.testbreak_e1/, "link_break(3 args): die when cell1 does not exist (actual msg check)");
 
     # Test 4: Error case (3 args): $cell2 does not exist
     Zigzag::link_make('2000', '2001', '+d.testbreak_e2'); # Re-link for this test
-    eval { Zigzag::link_break('2000', 'nonexistent_lb2', '+d.testbreak_e2'); };
-    like($@, qr/2000 is not linked to nonexistent_lb2 in direction \+d.testbreak_e2/, "link_break(3 args): die when cell2 does not exist (actual msg check)");
+    eval { Zigzag::link_break('2000', '2999', '+d.testbreak_e2'); };
+    like($@, qr/2000 is not linked to 2999 in direction \+d.testbreak_e2/, "link_break(3 args): die when cell2 does not exist (actual msg check)");
     Zigzag::link_break('2000', '+d.testbreak_e2'); # Clean up
 
     # Test 5: Error case (3 args): Invalid direction
@@ -1051,7 +1037,8 @@ subtest 'reverse_sign' => sub {
 subtest 'view_reset' => sub {
     %$test_slice = Zigzag::initial_geometry();
 
-    local *main::display_dirty = sub { diag("display_dirty called for view_reset"); };
+    local *main::display_dirty = sub { "display_dirty called for view_reset"; };
+    &main::display_dirty;
 
     plan tests => 7;
 
