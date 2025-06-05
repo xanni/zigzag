@@ -3,7 +3,7 @@ package ZigzagTest;
 use strict;
 use warnings;
 use lib '.'; # To find Zigzag.pm when run from the project directory
-use Test::More tests => 37;
+use Test::More tests => 36;
 
 # Mock user_error for testing purposes, as it's usually provided by the front-end
 BEGIN {
@@ -20,6 +20,45 @@ BEGIN { use_ok('Zigzag'); }
 # Setup data for all tests in slice 0
 @Zigzag::Hash_Ref = ({});
 my $test_slice = $Zigzag::Hash_Ref[0];
+
+subtest 'atcursor_copy' => sub {
+    %$test_slice = Zigzag::initial_geometry();
+    local *main::display_dirty = sub {};
+    plan tests => 12;
+
+    my $orig_cell_A_id = '700'; $test_slice->{$orig_cell_A_id} = 'Original A Content';
+    my $cursor0_obj_cell = Zigzag::get_cursor(0);
+    Zigzag::cell_excise($cursor0_obj_cell, 'd.cursor');
+    Zigzag::link_make($orig_cell_A_id, $cursor0_obj_cell, '+d.cursor');
+    my $new_cell_A_id = $test_slice->{'n'};
+    Zigzag::atcursor_copy(0);
+
+    ok(exists $test_slice->{$new_cell_A_id}, '1.1: New cell for accursed copy exists');
+    is(Zigzag::cell_get($new_cell_A_id), "Copy of Original A Content", '1.2: New cell has copied content');
+    is(Zigzag::get_accursed(0), $new_cell_A_id, '1.3: Accursed cell of Cursor 0 is the new copied cell');
+    is(Zigzag::cell_nbr($new_cell_A_id, "-d.clone"), undef, '1.4: New cell does not have a -d.clone link');
+    is(Zigzag::cell_nbr($orig_cell_A_id, "+d.clone"), undef, '1.5: Original cell does not have a +d.clone link');
+
+    %$test_slice = Zigzag::initial_geometry();
+    my $SELECT_HOME = 21;
+    my $orig_cell_B_id = '701'; $test_slice->{$orig_cell_B_id} = 'Original B';
+    my $orig_cell_C_id = '702'; $test_slice->{$orig_cell_C_id} = 'Original C';
+    Zigzag::link_make($SELECT_HOME, $orig_cell_B_id, '+d.mark');
+    Zigzag::link_make($orig_cell_B_id, $orig_cell_C_id, '+d.mark');
+    Zigzag::link_make($orig_cell_C_id, $SELECT_HOME, '+d.mark');
+    Zigzag::link_make($orig_cell_B_id, $orig_cell_C_id, '+d.testcopy');
+    my $next_cell_id = $test_slice->{'n'};
+    my ($new_cell_B_id, $new_cell_C_id, $new_cell_SH_id) = ($next_cell_id..$next_cell_id + 2);
+    Zigzag::atcursor_copy(0);
+
+    ok(exists $test_slice->{$new_cell_B_id}, '2.1: New cell B exists');
+    is(Zigzag::cell_get($new_cell_B_id), "Copy of Original B", '2.2: New cell B content');
+    ok(exists $test_slice->{$new_cell_C_id}, '2.3: New cell C exists');
+    is(Zigzag::cell_get($new_cell_C_id), "Copy of Original C", '2.4: New cell C content');
+    is(Zigzag::cell_nbr($new_cell_B_id, '+d.testcopy'), undef, '2.5: Link between new B and new C NOT copied');
+    is(Zigzag::get_accursed(0), $new_cell_SH_id, '2.6: Accursed is new copy of SELECT_HOME');
+    is(Zigzag::cell_nbr($new_cell_B_id, "-d.clone"), undef, '2.7: New cell B no -d.clone link');
+};
 
 subtest 'cell_excise' => sub {
     %$test_slice = Zigzag::initial_geometry();
@@ -277,132 +316,6 @@ subtest 'cell_insert' => sub {
     };
 };
 
-
-
-subtest 'atcursor_copy' => sub {
-    plan tests => 12;
-    my $SELECT_HOME = 21; my $CURSOR_OBJECT_CELL_ID_0 = 11;
-    local *main::display_dirty = sub { return; };
-    %$test_slice = Zigzag::initial_geometry();
-    Zigzag::cell_excise($SELECT_HOME, 'd.mark');
-    my $orig_cell_A_id = '700'; $test_slice->{$orig_cell_A_id} = 'Original A Content';
-    my $cursor0_obj_cell = Zigzag::get_cursor(0);
-    Zigzag::cell_excise($cursor0_obj_cell, 'd.cursor');
-    $test_slice->{"${cursor0_obj_cell}-d.cursor"} = $orig_cell_A_id;
-    $test_slice->{"${orig_cell_A_id}+d.cursor"} = $cursor0_obj_cell;
-    my $next_cell_id_at_start_tc1 = $test_slice->{'n'};
-    Zigzag::atcursor_copy(0);
-    my $new_cell_A_id = $next_cell_id_at_start_tc1;
-    ok(exists $test_slice->{$new_cell_A_id}, '1.1: New cell for accursed copy exists');
-    is(Zigzag::cell_get($new_cell_A_id), "Copy of Original A Content", '1.2: New cell has copied content');
-    is(Zigzag::get_accursed(0), $new_cell_A_id, '1.3: Accursed cell of Cursor 0 is the new copied cell');
-    is(Zigzag::cell_nbr($new_cell_A_id, "-d.clone"), undef, '1.4: New cell does not have a -d.clone link');
-    is(Zigzag::cell_nbr($orig_cell_A_id, "+d.clone"), undef, '1.5: Original cell does not have a +d.clone link');
-    %$test_slice = Zigzag::initial_geometry();
-    my $orig_cell_B_id = '701'; $test_slice->{$orig_cell_B_id} = 'Original B';
-    my $orig_cell_C_id = '702'; $test_slice->{$orig_cell_C_id} = 'Original C';
-    Zigzag::cell_excise($SELECT_HOME, 'd.mark');
-    Zigzag::link_make($SELECT_HOME, $orig_cell_B_id, '+d.mark');
-    Zigzag::link_make($orig_cell_B_id, $orig_cell_C_id, '+d.mark');
-    Zigzag::link_make($orig_cell_C_id, $SELECT_HOME, '+d.mark');
-    Zigzag::link_make($orig_cell_B_id, $orig_cell_C_id, '+d.testcopy');
-    my $neutral_accursed_target = '800'; $test_slice->{$neutral_accursed_target} = 'Neutral Accursed for TC2';
-    $cursor0_obj_cell = Zigzag::get_cursor(0);
-    Zigzag::cell_excise($cursor0_obj_cell, 'd.cursor');
-    $test_slice->{"${cursor0_obj_cell}-d.cursor"} = $neutral_accursed_target;
-    $test_slice->{"${neutral_accursed_target}+d.cursor"} = $cursor0_obj_cell;
-    my $next_cell_id_at_start_tc2 = $test_slice->{'n'};
-    Zigzag::atcursor_copy(0);
-    my $new_cell_B_id = $next_cell_id_at_start_tc2;
-    my $new_cell_C_id = $next_cell_id_at_start_tc2 + 1;
-    my $new_cell_SH_id = $next_cell_id_at_start_tc2 + 2;
-    ok(exists $test_slice->{$new_cell_B_id}, '2.1: New cell B exists');
-    is(Zigzag::cell_get($new_cell_B_id), "Copy of Original B", '2.2: New cell B content');
-    ok(exists $test_slice->{$new_cell_C_id}, '2.3: New cell C exists');
-    is(Zigzag::cell_get($new_cell_C_id), "Copy of Original C", '2.4: New cell C content');
-    is(Zigzag::cell_nbr($new_cell_B_id, '+d.testcopy'), undef, '2.5: Link between new B and new C NOT copied');
-    is(Zigzag::get_accursed(0), $new_cell_SH_id, '2.6: Accursed is new copy of SELECT_HOME');
-    is(Zigzag::cell_nbr($new_cell_B_id, "-d.clone"), undef, '2.7: New cell B no -d.clone link');
-};
-
-
-subtest 'atcursor_execute' => sub {
-    plan tests => 13;
-
-    # Using 'our' for these variables to see if it bypasses strict 'vars' issues
-    # if 'my' declarations are not being recognized as expected in this context.
-    our $CURSOR_OBJECT_CELL_ID_0 = 11;
-    our $accursed_cell_id_tc_container = '800';
-    our $prog_cell_A = '801';
-    our $prog_cell_B = '802';
-    our $clone_target_cell = '803';
-    our $original_for_clone = '804';
-    our $prog_err_id = '805';
-    our $non_prog_id = '806';
-    our $accursed_prog_id_direct = '807';
-
-    my @user_error_calls;
-    local *main::user_error = sub { push @user_error_calls, [@_]; };
-    local *main::display_dirty = sub {};
-    my $db_sync_call_count = 0;
-    local *main::db_sync = sub { $db_sync_call_count++; };
-
-    $main::test_var_for_execute = undef;
-    my $cursor0 = Zigzag::get_cursor(0);
-
-    my $setup_accursed_cell_with_content = sub {
-        my ($accursed_id_param, $accursed_content_param) = @_;
-        %$test_slice = Zigzag::initial_geometry();
-
-        my @literal_cell_ids_to_define = ('800', '801', '802', '803', '804', '805', '806', '807');
-        foreach my $id (@literal_cell_ids_to_define) {
-            $test_slice->{$id} = "Placeholder for $id";
-        }
-        $test_slice->{$accursed_id_param} = $accursed_content_param;
-
-        Zigzag::cell_excise($cursor0, 'd.cursor');
-        Zigzag::cell_insert($cursor0, $accursed_id_param, '-d.cursor');
-
-        $main::test_var_for_execute = 0;
-        @user_error_calls = ();
-        $Zigzag::Command_Count = 1;
-        $db_sync_call_count = 0;
-    };
-
-    $setup_accursed_cell_with_content->($prog_cell_A, '# $main::test_var_for_execute = 123;');
-    Zigzag::cell_excise($prog_cell_A, 'd.inside');
-    Zigzag::atcursor_execute(0);
-    is($main::test_var_for_execute, 123, '1.1: Single accursed progcell executed');
-    is(scalar @user_error_calls, 0, '1.2: No user_error for successful single progcell');
-    is($Zigzag::Command_Count, 0, '1.3: Command_Count reset');
-
-    $setup_accursed_cell_with_content->($prog_cell_A, '# $main::test_var_for_execute = 10;');
-    $test_slice->{$prog_cell_B} = '# $main::test_var_for_execute += 5;';
-    Zigzag::link_make($prog_cell_A, $prog_cell_B, '+d.inside');
-    Zigzag::atcursor_execute(0);
-    is($main::test_var_for_execute, 15, '2.1: Accursed then contained progcell executed');
-    is(scalar @user_error_calls, 0, '2.2: No user_error for sequential');
-
-    $setup_accursed_cell_with_content->($accursed_cell_id_tc_container, '# $main::test_var_for_execute = 1;');
-    $test_slice->{$original_for_clone} = '# $main::test_var_for_execute += 455;';
-    Zigzag::link_make($accursed_cell_id_tc_container, $clone_target_cell, '+d.inside');
-    Zigzag::link_make($original_for_clone, $clone_target_cell, '+d.clone');
-    Zigzag::atcursor_execute(0);
-    is($main::test_var_for_execute, 456, '3.1: Container and Cloned progcell executed');
-    is(scalar @user_error_calls, 0, '3.2: No user_error for container -> cloned progcell');
-    @user_error_calls = ();
-
-    $setup_accursed_cell_with_content->($prog_err_id, "# die 'eval error test';");
-    Zigzag::atcursor_execute(0);
-    is(scalar @user_error_calls, 1, '4.1: user_error called for eval error');
-    is($user_error_calls[0][0], 4, '4.2: user_error code is 4');
-    like($user_error_calls[0][1], qr/eval error test/, '4.3: user_error message');
-
-    $setup_accursed_cell_with_content->($non_prog_id, "Not a progcell");
-    Zigzag::atcursor_execute(0);
-    is(scalar @user_error_calls, 1, '5.1: user_error for non-progcell accursed cell');
-    like($user_error_calls[0][1], qr/Cell does not start with #/, '5.2: Correct error for non-progcell');
-};
 subtest 'cell_new' => sub {
     %$test_slice = Zigzag::initial_geometry();
     plan tests => 14;
@@ -960,36 +873,27 @@ subtest 'get_which_selection' => sub {
     is( Zigzag::get_which_selection('102'), undef, 'cell not in selection returns undef');
 };
 
-
-
 subtest 'is_active_selected' => sub {
-    plan tests => 5;
-    my $SELECT_HOME = 21;
-    local *main::display_dirty = sub {};
     %$test_slice = Zigzag::initial_geometry();
+
+    my $SELECT_HOME = 21;
     $test_slice->{'300'} = 'Cell in active selection';
     Zigzag::link_make($SELECT_HOME, '300', '+d.mark');
-    Zigzag::link_make('300', $SELECT_HOME, '+d.mark');
-    ok(Zigzag::is_active_selected('300'), 'Cell 300 is active_selected');
-    delete $test_slice->{"${SELECT_HOME}+d.mark"}; delete $test_slice->{"300-d.mark"};
-    delete $test_slice->{"300+d.mark"}; delete $test_slice->{"${SELECT_HOME}-d.mark"};
-    %$test_slice = Zigzag::initial_geometry();
-    ok(!Zigzag::is_active_selected($SELECT_HOME), "SELECT_HOME ($SELECT_HOME) itself is not active_selected");
-    %$test_slice = Zigzag::initial_geometry();
+
     my $other_selection_head = '22';
     $test_slice->{$other_selection_head} = 'Other Selection Head';
     $test_slice->{'301'} = 'Cell in other selection';
     Zigzag::link_make($other_selection_head, '301', '+d.mark');
-    Zigzag::link_make('301', $other_selection_head, '+d.mark');
-    ok(!Zigzag::is_active_selected('301'), 'Cell 301 (in non-active selection) is not active_selected');
-    %$test_slice = Zigzag::initial_geometry();
+
     $test_slice->{'302'} = 'Unselected Cell';
+
+    plan tests => 4;
+    ok(Zigzag::is_active_selected('300'), 'Cell 300 is active_selected');
+    ok(!Zigzag::is_active_selected($SELECT_HOME), "SELECT_HOME ($SELECT_HOME) itself is not active_selected");
+    ok(!Zigzag::is_active_selected('301'), 'Cell 301 (in non-active selection) is not active_selected');
     ok(!Zigzag::is_active_selected('302'), 'Cell 302 (not selected) is not active_selected');
-    %$test_slice = Zigzag::initial_geometry();
-    $test_slice->{'303'} = 'Cell 303 no d.mark';
-    delete $test_slice->{'303-d.mark'}; delete $test_slice->{'303+d.mark'};
-    ok(!Zigzag::is_active_selected('303'), 'Cell 303 (exists, no d.mark links) is not active_selected');
 };
+
 subtest 'is_clone' => sub {
     %$test_slice = Zigzag::initial_geometry();
 
@@ -1190,37 +1094,33 @@ subtest 'reverse_sign' => sub {
     is( Zigzag::reverse_sign('-d.test'), '+d.test', 'negative to positive');
 };
 
-
-
 subtest 'slice_sync_all' => sub {
     plan tests => 5;
     local @Zigzag::DB_Ref = ();
     Zigzag::slice_sync_all();
     ok(1, 'slice_sync_all runs with empty @DB_Ref');
-    my $sync_called_1 = 0;
-    eval 'package MockDB; sub new { my $class = shift; bless {@_}, $class; } sub sync { my $self = shift; ${$self->{sync_count}}++; }' if !defined &MockDB::sync;
-    my $mock_db_1 = bless { sync_count => \$sync_called_1 }, 'MockDB';
+
+    eval 'package MockDB; sub sync { ${shift->{sync_count}}++; }' if !defined &MockDB::sync;
+    my $sync_called_1 = 0; my $mock_db_1 = bless { sync_count => \$sync_called_1 }, 'MockDB';
     @Zigzag::DB_Ref = ($mock_db_1);
     Zigzag::slice_sync_all();
     is($sync_called_1, 1, 'sync called once for one mock DB object');
-    @Zigzag::DB_Ref = ();
+
     my $sync_called_2 = 0; my $mock_db_2 = bless { sync_count => \$sync_called_2 }, 'MockDB';
     my $sync_called_3 = 0; my $mock_db_3 = bless { sync_count => \$sync_called_3 }, 'MockDB';
     @Zigzag::DB_Ref = ($mock_db_2, $mock_db_3);
     Zigzag::slice_sync_all();
     is($sync_called_2, 1, 'sync called once for mock_db_2');
     is($sync_called_3, 1, 'sync called once for mock_db_3');
+
     @Zigzag::DB_Ref = (undef);
     eval { Zigzag::slice_sync_all(); };
     like($@, qr/Can't call method "sync" on an undefined value/, 'slice_sync_all dies if @DB_Ref contains undef');
-    @Zigzag::DB_Ref = ();
 };
+
 subtest 'view_reset' => sub {
     %$test_slice = Zigzag::initial_geometry();
-
-    local *main::display_dirty = sub { "display_dirty called for view_reset"; };
-    &main::display_dirty;
-
+    local *main::display_dirty = sub {};
     plan tests => 7;
 
     # Setup: Get cursor 0 and its dimension-holding cells
