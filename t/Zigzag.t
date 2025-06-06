@@ -3,7 +3,7 @@ package ZigzagTest;
 use strict;
 use warnings;
 use lib '.'; # To find Zigzag.pm when run from the project directory
-use Test::More tests => 36;
+use Test::More tests => 37;
 
 # Mock user_error for testing purposes, as it's usually provided by the front-end
 BEGIN {
@@ -58,6 +58,123 @@ subtest 'atcursor_copy' => sub {
     is(Zigzag::cell_nbr($new_cell_B_id, '+d.testcopy'), undef, '2.5: Link between new B and new C NOT copied');
     is(Zigzag::get_accursed(0), $new_cell_SH_id, '2.6: Accursed is new copy of SELECT_HOME');
     is(Zigzag::cell_nbr($new_cell_B_id, "-d.clone"), undef, '2.7: New cell B no -d.clone link');
+};
+
+subtest 'atcursor_execute' => sub {
+    %$test_slice = Zigzag::initial_geometry();
+    my $db_sync_called = 0;
+    local *main::db_sync = sub { $db_sync_called++; };
+    local *main::display_dirty = sub {}; # No-op for display_dirty
+
+    plan tests => 12;
+
+    # Test Case 1: Basic execution
+    # $Zigzag::Command_Count might be reset by initial_geometry or previous tests,
+    # so set it to a known non-zero value before testing its reset.
+    $Zigzag::Command_Count = 5; # Set to a known non-zero value
+
+    my $cursor0_cell_id_tc1 = Zigzag::get_cursor(0); # Should be '11'
+    my $accursed_cell_tc1 = '6000';
+    my $progcell_tc1 = '6001';
+
+    $test_slice->{$accursed_cell_tc1} = "Accursed for TC1";
+    $test_slice->{$progcell_tc1} = "# \$Zigzag::Hash_Ref[0]->{'executed_progcell_tc1'} = 'yes_tc1';";
+    $test_slice->{$cursor0_cell_id_tc1 . '-d.cursor'} = $accursed_cell_tc1;
+    $test_slice->{$accursed_cell_tc1 . '+d.cursor'} = $cursor0_cell_id_tc1;
+    Zigzag::link_make($accursed_cell_tc1, $progcell_tc1, '+d.inside');
+
+    Zigzag::atcursor_execute(0);
+
+    is($test_slice->{'executed_progcell_tc1'}, 'yes_tc1', 'TC1: Progcell executed and modified test_slice');
+    is($Zigzag::Command_Count, 0, 'TC1: Command_Count was reset to 0');
+    is($db_sync_called, 1, 'TC1: db_sync was called once');
+
+    # Test Case 2: Non-progcell
+    %$test_slice = Zigzag::initial_geometry();
+    $db_sync_called = 0;
+    delete $test_slice->{'executed_progcell_tc1'}; # Ensure it's clean from TC1
+
+    my $original_command_count_tc2 = $Zigzag::Command_Count = 3; # Set and store
+    my $cursor0_cell_id_tc2 = Zigzag::get_cursor(0);
+    my $accursed_cell_tc2 = '6010';
+    my $non_progcell_tc2 = '6011';
+
+    $test_slice->{$accursed_cell_tc2} = "Accursed for TC2";
+    $test_slice->{$non_progcell_tc2} = "Just some data";
+    $test_slice->{$cursor0_cell_id_tc2 . '-d.cursor'} = $accursed_cell_tc2;
+    $test_slice->{$accursed_cell_tc2 . '+d.cursor'} = $cursor0_cell_id_tc2;
+    Zigzag::link_make($accursed_cell_tc2, $non_progcell_tc2, '+d.inside');
+
+    Zigzag::atcursor_execute(0);
+
+    is($test_slice->{'executed_progcell_tc1'}, undef, 'TC2: executed_progcell_tc1 flag should be unset/undef');
+    is($Zigzag::Command_Count, $original_command_count_tc2, 'TC2: Command_Count remains unchanged');
+    is($db_sync_called, 0, 'TC2: db_sync was not called');
+
+    # Test Case 3: Error in progcell
+    %$test_slice = Zigzag::initial_geometry();
+    $db_sync_called = 0;
+    $@ = undef; # Clear any prior error
+
+    my $cursor0_cell_id_tc3 = Zigzag::get_cursor(0);
+    my $accursed_cell_tc3 = '6020';
+    my $progcell_error_tc3 = '6021';
+
+    $test_slice->{$accursed_cell_tc3} = "Accursed for TC3";
+    $test_slice->{$progcell_error_tc3} = "# die 'custom error for test';";
+    $test_slice->{$cursor0_cell_id_tc3 . '-d.cursor'} = $accursed_cell_tc3;
+    $test_slice->{$accursed_cell_tc3 . '+d.cursor'} = $cursor0_cell_id_tc3;
+    Zigzag::link_make($accursed_cell_tc3, $progcell_error_tc3, '+d.inside');
+
+    eval { Zigzag::atcursor_execute(0); };
+
+    like($@, qr/custom error for test/, 'TC3: Error message captured in $@');
+    is($db_sync_called, 1, 'TC3: db_sync was called once (before eval)');
+
+    # Test Case 4: Multiple contained cells - first one executable (after a non-exec)
+    %$test_slice = Zigzag::initial_geometry();
+    $db_sync_called = 0;
+
+    my $cursor0_cell_id_tc4 = Zigzag::get_cursor(0);
+    my $accursed_cell_tc4 = '6030';
+    my $non_progcell_tc4 = '6031';
+    my $progcell_tc4 = '6032';
+
+    $test_slice->{$accursed_cell_tc4} = "Accursed for TC4";
+    $test_slice->{$non_progcell_tc4} = "NonProgcell";
+    $test_slice->{$progcell_tc4} = "# \$Zigzag::Hash_Ref[0]->{'multi_exec_test_tc4'} = 'progcell_6032_ran';";
+    $test_slice->{$cursor0_cell_id_tc4 . '-d.cursor'} = $accursed_cell_tc4;
+    $test_slice->{$accursed_cell_tc4 . '+d.cursor'} = $cursor0_cell_id_tc4;
+    Zigzag::link_make($accursed_cell_tc4, $non_progcell_tc4, '+d.inside');
+    Zigzag::link_make($non_progcell_tc4, $progcell_tc4, '+d.inside'); # Order: accursed -> non_progcell -> progcell
+
+    Zigzag::atcursor_execute(0);
+
+    is($test_slice->{'multi_exec_test_tc4'}, 'progcell_6032_ran', 'TC4: Correct progcell executed');
+    is($db_sync_called, 1, 'TC4: db_sync was called once');
+
+    # Test Case 5: Multiple contained cells - executable stops further execution
+    %$test_slice = Zigzag::initial_geometry();
+    $db_sync_called = 0;
+
+    my $cursor0_cell_id_tc5 = Zigzag::get_cursor(0);
+    my $accursed_cell_tc5 = '6040';
+    my $progcell1_tc5 = '6041';
+    my $progcell2_tc5 = '6042';
+
+    $test_slice->{$accursed_cell_tc5} = "Accursed for TC5";
+    $test_slice->{$progcell1_tc5} = "# \$Zigzag::Hash_Ref[0]->{'stop_test_tc5'} = 'first_ran';";
+    $test_slice->{$progcell2_tc5} = "# \$Zigzag::Hash_Ref[0]->{'stop_test_tc5'} = 'second_ran';";
+
+    $test_slice->{$cursor0_cell_id_tc5 . '-d.cursor'} = $accursed_cell_tc5;
+    $test_slice->{$accursed_cell_tc5 . '+d.cursor'} = $cursor0_cell_id_tc5;
+    Zigzag::link_make($accursed_cell_tc5, $progcell1_tc5, '+d.inside');
+    Zigzag::link_make($progcell1_tc5, $progcell2_tc5, '+d.inside'); # Order: accursed -> progcell1 -> progcell2
+
+    Zigzag::atcursor_execute(0);
+
+    is($test_slice->{'stop_test_tc5'}, 'first_ran', 'TC5: First progcell ran, second did not');
+    is($db_sync_called, 1, 'TC5: db_sync was called once');
 };
 
 subtest 'cell_excise' => sub {
