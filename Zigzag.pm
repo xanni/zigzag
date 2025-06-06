@@ -155,7 +155,6 @@ use integer;
 use strict;
 use POSIX;
 use DB_File;
-#use Fcntl;
 use File::Copy;
 
 # Import functions
@@ -1117,7 +1116,6 @@ sub atcursor_execute($)
     $@ = "Cell does not start with #";	# Error in case eval isn't done
     if (/^#/)
     {
-      db_sync();
       $Command_Count = 0;   # Write cached data to file
       eval;
     }

@@ -3,7 +3,7 @@ package ZigzagTest;
 use strict;
 use warnings;
 use lib '.'; # To find Zigzag.pm when run from the project directory
-use Test::More tests => 36;
+use Test::More tests => 37;
 
 # Mock user_error for testing purposes, as it's usually provided by the front-end
 BEGIN {
@@ -58,6 +58,76 @@ subtest 'atcursor_copy' => sub {
     is(Zigzag::cell_nbr($new_cell_B_id, '+d.testcopy'), undef, '2.5: Link between new B and new C NOT copied');
     is(Zigzag::get_accursed(0), $new_cell_SH_id, '2.6: Accursed is new copy of SELECT_HOME');
     is(Zigzag::cell_nbr($new_cell_B_id, "-d.clone"), undef, '2.7: New cell B no -d.clone link');
+};
+
+subtest 'atcursor_execute' => sub {
+    %$test_slice = Zigzag::initial_geometry();
+
+    plan tests => 6;
+
+    # Test Case 1: Basic execution
+    # $Zigzag::Command_Count might be reset by initial_geometry or previous tests,
+    # so set it to a known non-zero value before testing its reset.
+    $Zigzag::Command_Count = 5; # Set to a known non-zero value
+
+    my $cursor0_cell_id = Zigzag::get_cursor(0); # Should be '11'
+    my $progcell_tc1 = '6000';
+
+    $test_slice->{$progcell_tc1} = "#\n\$Zigzag::Hash_Ref[0]->{'executed_progcell_tc1'} = 'yes_tc1';";
+    Zigzag::link_break($cursor0_cell_id, '-d.cursor');
+    Zigzag::link_make($cursor0_cell_id, $progcell_tc1, '-d.cursor');
+
+    Zigzag::atcursor_execute(0);
+
+    is($test_slice->{'executed_progcell_tc1'}, 'yes_tc1', 'TC1: Progcell executed and modified test_slice');
+    is($Zigzag::Command_Count, 0, 'TC1: Command_Count was reset to 0');
+
+    # Test Case 2: Non-progcell
+    %$test_slice = Zigzag::initial_geometry();
+
+    my $original_command_count_tc2 = $Zigzag::Command_Count = 3; # Set and store
+    my $non_progcell_tc2 = '6010';
+
+    $test_slice->{$non_progcell_tc2} = "Just some data";
+    Zigzag::link_break($cursor0_cell_id, '-d.cursor');
+    Zigzag::link_make($non_progcell_tc2, $cursor0_cell_id, '+d.cursor');
+
+    eval { Zigzag::atcursor_execute(0); };
+
+    like($@, qr/^Cell does not start with #/, 'TC3: Error message captured in $@');
+    is($Zigzag::Command_Count, $original_command_count_tc2, 'TC2: Command_Count remains unchanged');
+
+    # Test Case 3: Error in progcell
+    %$test_slice = Zigzag::initial_geometry();
+
+    my $progcell_error_tc3 = '6020';
+
+    $test_slice->{$progcell_error_tc3} = "#\ndie 'custom error for test';";
+    Zigzag::link_break($cursor0_cell_id, '-d.cursor');
+    Zigzag::link_make($progcell_error_tc3, $cursor0_cell_id, '+d.cursor');
+
+    eval { Zigzag::atcursor_execute(0); };
+
+    like($@, qr/custom error for test/, 'TC3: Error message captured in $@');
+
+    # Test Case 4: Multiple contained cells
+    %$test_slice = Zigzag::initial_geometry();
+
+    my $accursed_cell_tc4 = '6030';
+    my $progcell1_tc4 = '6031';
+    my $progcell2_tc4 = '6032';
+
+    $test_slice->{$accursed_cell_tc4} = "#\n\$Zigzag::Hash_Ref[0]->{'multi_exec_test_tc4'} = '6030, ';";
+    $test_slice->{$progcell1_tc4} = "#\n\$Zigzag::Hash_Ref[0]->{'multi_exec_test_tc4'} .= '6031 ';";
+    $test_slice->{$progcell2_tc4} = "#\n\$Zigzag::Hash_Ref[0]->{'multi_exec_test_tc4'} .= 'and 6032 ran';";
+    Zigzag::link_break($cursor0_cell_id, '-d.cursor');
+    Zigzag::link_make($accursed_cell_tc4, $cursor0_cell_id, '+d.cursor');
+    Zigzag::link_make($accursed_cell_tc4, $progcell1_tc4, '+d.inside');
+    Zigzag::link_make($progcell1_tc4, $progcell2_tc4, '+d.inside'); # Order: accursed -> progcell1 -> progcell2
+
+    Zigzag::atcursor_execute(0);
+
+    is($test_slice->{'multi_exec_test_tc4'}, '6030, 6031 and 6032 ran', 'TC4: All progcells executed');
 };
 
 subtest 'cell_excise' => sub {
