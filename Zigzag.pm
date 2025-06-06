@@ -155,7 +155,6 @@ use integer;
 use strict;
 use POSIX;
 use DB_File;
-#use Fcntl;
 use File::Copy;
 
 # Import functions
@@ -163,7 +162,6 @@ use File::Copy;
 *display_dirty = *::display_dirty;
 *display_status_draw = *::display_status_draw;
 *user_error = *::user_error;
-*db_sync = *::db_sync;
 
 # Note: We are using the following coding conventions:
 # Constants are named in ALLCAPS
@@ -1110,28 +1108,21 @@ sub cursor_move_direction($$)
 sub atcursor_execute($)
 # Execute the contents of a progcell under a given cursor
 {
-  my $cell_id; # Use a different variable name to avoid clash with default $_
-  foreach $cell_id (get_contained(get_lastcell(get_cursor($_[0]), "-d.cursor")))
+  my $cell;
+  foreach $cell (get_contained(get_lastcell(get_cursor($_[0]), "-d.cursor")))
   {
-    my $content = get_cell_contents($cell_id); # Use $content
-    $@ = undef; # Clear error before each cell processing
-
-    if ($content =~ /^#/) # Check if actual content is a progcell
+#    $_ = cell_get(get_lastcell($cell, "-d.clone"));
+    $_ = get_cell_contents($cell);
+    $@ = "Cell does not start with #";	# Error in case eval isn't done
+    if (s/^#//)
     {
-      my $eval_content = $content;
-      $eval_content =~ s/^#\s*//; # Remove leading # and optional whitespace
-
-      # It is a progcell, so attempt execution
-      db_sync();
       $Command_Count = 0;   # Write cached data to file
-      eval $eval_content; # Evaluate the cleaned content
-      # After the first progcell is encountered and eval'd (successfully or not), stop.
-      last;
+      eval;
     }
-    # If not a progcell, the loop continues to the next contained cell.
+    last if $@;
   }
   chomp $@;
-  user_error(4, $@) if ($@); # Check if $@ is true (non-empty, non-zero)
+  user_error(4, $@) if ($@);
 }
 
 sub atcursor_clone($;$)

@@ -62,12 +62,8 @@ subtest 'atcursor_copy' => sub {
 
 subtest 'atcursor_execute' => sub {
     %$test_slice = Zigzag::initial_geometry();
-    my $db_sync_called = 0;
-    local *main::db_sync = undef;
-    *main::db_sync = sub { $db_sync_called++; };
-    local *main::display_dirty = sub {}; # No-op for display_dirty
 
-    plan tests => 12;
+    plan tests => 6;
 
     # Test Case 1: Basic execution
     # $Zigzag::Command_Count might be reset by initial_geometry or previous tests,
@@ -75,102 +71,63 @@ subtest 'atcursor_execute' => sub {
     $Zigzag::Command_Count = 5; # Set to a known non-zero value
 
     my $cursor0_cell_id = Zigzag::get_cursor(0); # Should be '11'
-    my $accursed_cell_tc1 = '6000';
-    my $progcell_tc1 = '6001';
+    my $progcell_tc1 = '6000';
 
-    $test_slice->{$accursed_cell_tc1} = "Accursed for TC1";
     $test_slice->{$progcell_tc1} = "# \$Zigzag::Hash_Ref[0]->{'executed_progcell_tc1'} = 'yes_tc1';";
     Zigzag::link_break($cursor0_cell_id, '-d.cursor');
-    Zigzag::link_make($accursed_cell_tc1, $cursor0_cell_id, '+d.cursor');
-    Zigzag::link_make($accursed_cell_tc1, $progcell_tc1, '+d.inside');
+    Zigzag::link_make($cursor0_cell_id, $progcell_tc1, '-d.cursor');
 
     Zigzag::atcursor_execute(0);
 
     is($test_slice->{'executed_progcell_tc1'}, 'yes_tc1', 'TC1: Progcell executed and modified test_slice');
     is($Zigzag::Command_Count, 0, 'TC1: Command_Count was reset to 0');
-    is($db_sync_called, 1, 'TC1: db_sync was called once');
 
     # Test Case 2: Non-progcell
     %$test_slice = Zigzag::initial_geometry();
-    $db_sync_called = 0;
 
     my $original_command_count_tc2 = $Zigzag::Command_Count = 3; # Set and store
-    my $accursed_cell_tc2 = '6010';
-    my $non_progcell_tc2 = '6011';
+    my $non_progcell_tc2 = '6010';
 
-    $test_slice->{$accursed_cell_tc2} = "Accursed for TC2";
     $test_slice->{$non_progcell_tc2} = "Just some data";
     Zigzag::link_break($cursor0_cell_id, '-d.cursor');
-    Zigzag::link_make($accursed_cell_tc2, $cursor0_cell_id, '+d.cursor');
-    Zigzag::link_make($accursed_cell_tc2, $non_progcell_tc2, '+d.inside');
+    Zigzag::link_make($non_progcell_tc2, $cursor0_cell_id, '+d.cursor');
 
-    Zigzag::atcursor_execute(0);
+    eval { Zigzag::atcursor_execute(0); };
 
-    is($test_slice->{'executed_progcell_tc1'}, undef, 'TC2: executed_progcell_tc1 flag should be unset/undef');
+    like($@, qr/^Cell does not start with #/, 'TC3: Error message captured in $@');
     is($Zigzag::Command_Count, $original_command_count_tc2, 'TC2: Command_Count remains unchanged');
-    is($db_sync_called, 0, 'TC2: db_sync was not called');
 
     # Test Case 3: Error in progcell
     %$test_slice = Zigzag::initial_geometry();
-    $db_sync_called = 0;
-    $@ = undef; # Clear any prior error
 
-    my $accursed_cell_tc3 = '6020';
-    my $progcell_error_tc3 = '6021';
+    my $progcell_error_tc3 = '6020';
 
-    $test_slice->{$accursed_cell_tc3} = "Accursed for TC3";
     $test_slice->{$progcell_error_tc3} = "# die 'custom error for test';";
     Zigzag::link_break($cursor0_cell_id, '-d.cursor');
-    Zigzag::link_make($accursed_cell_tc3, $cursor0_cell_id, '+d.cursor');
-    Zigzag::link_make($accursed_cell_tc3, $progcell_error_tc3, '+d.inside');
+    Zigzag::link_make($progcell_error_tc3, $cursor0_cell_id, '+d.cursor');
 
     eval { Zigzag::atcursor_execute(0); };
 
     like($@, qr/custom error for test/, 'TC3: Error message captured in $@');
-    is($db_sync_called, 1, 'TC3: db_sync was called once (before eval)');
 
-    # Test Case 4: Multiple contained cells - first one executable (after a non-exec)
+    # Test Case 4: Multiple contained cells
     %$test_slice = Zigzag::initial_geometry();
-    $db_sync_called = 0;
 
     my $accursed_cell_tc4 = '6030';
-    my $non_progcell_tc4 = '6031';
-    my $progcell_tc4 = '6032';
+    my $progcell1_tc4 = '6031';
+    my $progcell2_tc4 = '6032';
 
-    $test_slice->{$accursed_cell_tc4} = "Accursed for TC4";
-    $test_slice->{$non_progcell_tc4} = "NonProgcell";
-    $test_slice->{$progcell_tc4} = "# \$Zigzag::Hash_Ref[0]->{'multi_exec_test_tc4'} = 'progcell_6032_ran';";
+    $test_slice->{$accursed_cell_tc4} = "# \$Zigzag::Hash_Ref[0]->{'multi_exec_test_tc4'} = '6030, ';";
+    $test_slice->{$progcell1_tc4} = "# \$Zigzag::Hash_Ref[0]->{'multi_exec_test_tc4'} .= '6031 ';";
+    $test_slice->{$progcell2_tc4} = "# \$Zigzag::Hash_Ref[0]->{'multi_exec_test_tc4'} .= 'and 6032 ran';";
     Zigzag::link_break($cursor0_cell_id, '-d.cursor');
     Zigzag::link_make($accursed_cell_tc4, $cursor0_cell_id, '+d.cursor');
-    Zigzag::link_make($accursed_cell_tc4, $non_progcell_tc4, '+d.inside');
-    Zigzag::link_make($non_progcell_tc4, $progcell_tc4, '+d.inside'); # Order: accursed -> non_progcell -> progcell
+    Zigzag::link_make($accursed_cell_tc4, $progcell1_tc4, '+d.inside');
+    Zigzag::link_make($progcell1_tc4, $progcell2_tc4, '+d.inside'); # Order: accursed -> progcell1 -> progcell2
 
     Zigzag::atcursor_execute(0);
 
-    is($test_slice->{'multi_exec_test_tc4'}, 'progcell_6032_ran', 'TC4: Correct progcell executed');
-    is($db_sync_called, 1, 'TC4: db_sync was called once');
-
-    # Test Case 5: Multiple contained cells - executable stops further execution
-    %$test_slice = Zigzag::initial_geometry();
-    $db_sync_called = 0;
-
-    my $accursed_cell_tc5 = '6040';
-    my $progcell1_tc5 = '6041';
-    my $progcell2_tc5 = '6042';
-
-    $test_slice->{$accursed_cell_tc5} = "Accursed for TC5";
-    $test_slice->{$progcell1_tc5} = "# \$Zigzag::Hash_Ref[0]->{'stop_test_tc5'} = 'first_ran';";
-    $test_slice->{$progcell2_tc5} = "# \$Zigzag::Hash_Ref[0]->{'stop_test_tc5'} = 'second_ran';";
-
-    Zigzag::link_break($cursor0_cell_id, '-d.cursor');
-    Zigzag::link_make($accursed_cell_tc5, $cursor0_cell_id, '+d.cursor');
-    Zigzag::link_make($accursed_cell_tc5, $progcell1_tc5, '+d.inside');
-    Zigzag::link_make($progcell1_tc5, $progcell2_tc5, '+d.inside'); # Order: accursed -> progcell1 -> progcell2
-
-    Zigzag::atcursor_execute(0);
-
-    is($test_slice->{'stop_test_tc5'}, 'first_ran', 'TC5: First progcell ran, second did not');
-    is($db_sync_called, 1, 'TC5: db_sync was called once');
+    is($test_slice->{'multi_exec_test_tc4'}, '6030, 6031 and 6032 ran', 'TC4: All progcells executed');
 };
 
 subtest 'cell_excise' => sub {
