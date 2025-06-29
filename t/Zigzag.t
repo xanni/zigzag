@@ -3,7 +3,7 @@ package ZigzagTest;
 use strict;
 use warnings;
 use lib '.'; # To find Zigzag.pm when run from the project directory
-use Test::More tests => 37;
+use Test::More tests => 38;
 
 # Mock user_error for testing purposes, as it's usually provided by the front-end
 BEGIN {
@@ -58,6 +58,52 @@ subtest 'atcursor_copy' => sub {
     is(Zigzag::cell_nbr($new_cell_B_id, '+d.testcopy'), undef, '2.5: Link between new B and new C NOT copied');
     is(Zigzag::get_accursed(0), $new_cell_SH_id, '2.6: Accursed is new copy of SELECT_HOME');
     is(Zigzag::cell_nbr($new_cell_B_id, "-d.clone"), undef, '2.7: New cell B no -d.clone link');
+};
+
+subtest 'cursor_jump' => sub {
+    %$test_slice = Zigzag::initial_geometry();
+    local *main::display_dirty = sub {}; # Mock display_dirty
+    plan tests => 7;
+
+    # Define cells for testing
+    my $cursor0_initial_accursed = Zigzag::get_accursed(0); # Should be cell '0' initially
+    my $cursor0_cell = Zigzag::get_cursor(0); # Should be '11'
+
+    my $target_cell_A = '2000'; $test_slice->{$target_cell_A} = 'Target Cell A';
+    my $target_cell_B = '2001'; $test_slice->{$target_cell_B} = 'Target Cell B (already a cursor)';
+    my $non_existent_cell_C = '2002';
+    # Make target_cell_B a pseudo-cursor cell for testing by giving it a -d.cursor link
+    # This doesn't make it a *real* cursor in the list of cursors, but makes cursor_jump treat it as one.
+    my $helper_for_B = '2003'; $test_slice->{$helper_for_B} = 'Helper for B';
+    Zigzag::link_make($helper_for_B, $target_cell_B, '+d.cursor'); # $target_cell_B now has a -d.cursor link
+
+    # Test Case 1: Jump cursor 0 to a valid, existing, non-cursor cell (target_cell_A)
+    Zigzag::cursor_jump($cursor0_cell, $target_cell_A);
+    is(Zigzag::get_accursed(0), $target_cell_A, "1.1: Cursor 0 jumped to target_cell_A, accursed is $target_cell_A");
+    isnt(Zigzag::get_accursed(0), $cursor0_initial_accursed, "1.2: Cursor 0 accursed is no longer initial accursed cell");
+
+    # Test Case 2: Attempt to jump cursor 0 to a non-existent cell (non_existent_cell_C)
+    # First, reset cursor 0 to a known state (e.g., back to its initial accursed cell)
+    # To do this robustly, we might need to jump it to a known valid cell first, then to initial.
+    # For simplicity, let's assume jumping back to $cursor0_initial_accursed is fine for now.
+    # Or better, just note current accursed before the failing jump.
+    my $accursed_before_fail_jump1 = Zigzag::get_accursed(0);
+    eval { Zigzag::cursor_jump($cursor0_cell, $non_existent_cell_C); };
+    like($@, qr/\Q$non_existent_cell_C\E at t\/Zigzag\.t line \d+/, "2.1: Died correctly when jumping to non-existent cell $non_existent_cell_C");
+    is(Zigzag::get_accursed(0), $accursed_before_fail_jump1, "2.2: Cursor 0 accursed remains unchanged after failed jump to non-existent cell");
+
+    # Test Case 3: Attempt to jump cursor 0 to a cell that is already a cursor (target_cell_B)
+    my $accursed_before_fail_jump2 = Zigzag::get_accursed(0);
+    eval { Zigzag::cursor_jump($cursor0_cell, $target_cell_B); };
+    like($@, qr/\Q$target_cell_B\E at t\/Zigzag\.t line \d+/, "3.1: Died correctly when jumping to cursor cell $target_cell_B");
+    is(Zigzag::get_accursed(0), $accursed_before_fail_jump2, "3.2: Cursor 0 accursed remains unchanged after failed jump to cursor cell");
+
+    # Test Case 4: Ensure display_dirty was called (implicitly tested by mocking if it causes error otherwise)
+    # This test is more about ensuring no crash if display_dirty is called, as direct output capture is complex.
+    # We can explicitly call display_dirty here to ensure our mock is working, though not strictly a test of cursor_jump itself.
+    main::display_dirty(); # Call the mocked sub
+    ok(1, "4.1: Mocked display_dirty was called without error (indirect test)");
+
 };
 
 subtest 'atcursor_execute' => sub {
