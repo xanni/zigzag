@@ -3,7 +3,7 @@ package ZigzagTest;
 use strict;
 use warnings;
 use lib '.'; # To find Zigzag.pm when run from the project directory
-use Test::More tests => 38;
+use Test::More tests => 39;
 
 # Mock user_error for testing purposes, as it's usually provided by the front-end
 BEGIN {
@@ -431,6 +431,31 @@ subtest 'cell_insert' => sub {
         is(Zigzag::cell_nbr($cellB, $rev_dim), $cellE, "11.3: B still links from E");
         is(Zigzag::cell_nbr($cellA, $dim), undef, "11.4: A remains unlinked to B");
     };
+};
+
+subtest 'cell_nbr' => sub {
+    %$test_slice = (); # Start with a clean slate
+    plan tests => 5;
+
+    # Setup cells and a link for testing
+    $test_slice->{'7000'} = 'Cell A for cell_nbr';
+    $test_slice->{'7001'} = 'Cell B for cell_nbr';
+    Zigzag::link_make('7000', '7001', '+d.testnbr');
+
+    # Test Case 1: Follow an existing link in the positive direction.
+    is(Zigzag::cell_nbr('7000', '+d.testnbr'), '7001', "Follows an existing positive link");
+
+    # Test Case 2: Follow an existing link in the negative (reverse) direction.
+    is(Zigzag::cell_nbr('7001', '-d.testnbr'), '7000', "Follows an existing negative link");
+
+    # Test Case 3: Attempt to follow a non-existent link from an existing cell.
+    is(Zigzag::cell_nbr('7000', '+d.nonexistent'), undef, "Returns undef for a non-existent link from an existing cell");
+
+    # Test Case 4: Attempt to follow a link from a non-existent cell.
+    is(Zigzag::cell_nbr('nonexistent_cell_cn', '+d.testnbr'), undef, "Returns undef for a non-existent starting cell");
+
+    # Test Case 5: Attempt to follow a link in a valid dimension but from the wrong end of the link.
+    is(Zigzag::cell_nbr('7000', '-d.testnbr'), undef, "Returns undef when following a link from the wrong direction");
 };
 
 subtest 'cell_new' => sub {
@@ -1272,3 +1297,5 @@ subtest 'wordbreak' => sub {
     is( Zigzag::wordbreak("longstringnospaces", 10), "longstring", "no space, breaks at limit");
     is( Zigzag::wordbreak("string with newline\nrest of string", 25), "string with newline ", "breaks at newline and adds space");
 };
+
+1;
